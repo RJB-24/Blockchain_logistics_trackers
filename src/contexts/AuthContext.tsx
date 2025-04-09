@@ -1,9 +1,8 @@
-
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
-import { toast } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 
 export type UserRole = 'manager' | 'driver' | 'customer';
 
@@ -39,10 +38,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const { toast: uiToast } = useToast();
 
-  // Fetch profile data including role
   const fetchUserProfile = async (userId: string) => {
     try {
-      // Get the user profile
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -51,7 +48,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (profileError) throw profileError;
 
-      // Get the user role
       const { data: roleData, error: roleError } = await supabase
         .from('user_roles')
         .select('role')
@@ -74,7 +70,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Utility function to get profile by ID (useful for other components)
   const getProfileById = async (id: string): Promise<UserProfile | null> => {
     try {
       const { data, error } = await supabase
@@ -92,15 +87,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, currentSession) => {
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         
-        // If we have a user, fetch their profile data
         if (currentSession?.user) {
-          // Use setTimeout to avoid potential recursion issues
           setTimeout(() => {
             fetchUserProfile(currentSession.user.id);
           }, 0);
@@ -111,7 +103,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     );
 
-    // Check for existing session
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
@@ -185,7 +176,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
-      // Create the user account
       const { data, error } = await supabase.auth.signUp({
         email,
         password,

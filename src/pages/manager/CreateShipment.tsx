@@ -2,183 +2,245 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useBlockchain } from '@/hooks/useBlockchain';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
+import { Truck, Package, CalendarIcon, Leaf } from 'lucide-react';
+import { nanoid } from 'nanoid';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
-import { CalendarIcon, Package, ArrowRight, Truck, Ship, Train, Plane } from 'lucide-react';
-import { useBlockchain } from '@/hooks/useBlockchain';
 
-const transportTypes = [
-  { value: 'truck', label: 'Truck', icon: <Truck className="h-4 w-4" /> },
-  { value: 'ship', label: 'Ship', icon: <Ship className="h-4 w-4" /> },
-  { value: 'rail', label: 'Rail', icon: <Train className="h-4 w-4" /> },
-  { value: 'air', label: 'Air', icon: <Plane className="h-4 w-4" /> },
-  { value: 'multi-modal', label: 'Multi-modal', icon: <Package className="h-4 w-4" /> }
-];
+interface UserProfile {
+  id: string;
+  full_name: string;
+  avatar_url?: string;
+}
 
-interface ShipmentForm {
+interface ShipmentFormData {
   title: string;
   description: string;
   origin: string;
   destination: string;
-  productType: string;
+  product_type: string;
   quantity: number;
   weight: number;
-  transportType: string;
-  departureDate: Date | null;
-  estimatedArrival: Date | null;
-  customerId: string;
-  driverId: string | null;
+  transport_type: 'truck' | 'rail' | 'ship' | 'air' | 'multi-modal';
+  planned_departure_date: string;
+  estimated_arrival_date: string;
+  assigned_driver_id: string;
+  customer_id: string;
 }
 
 const CreateShipment = () => {
-  const navigate = useNavigate();
-  const { registerShipment, isLoading: blockchainLoading } = useBlockchain();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState<ShipmentForm>({
+  const [formData, setFormData] = useState<ShipmentFormData>({
     title: '',
     description: '',
     origin: '',
     destination: '',
-    productType: '',
+    product_type: '',
     quantity: 1,
     weight: 0,
-    transportType: '',
-    departureDate: null,
-    estimatedArrival: null,
-    customerId: '',
-    driverId: null
+    transport_type: 'truck',
+    planned_departure_date: '',
+    estimated_arrival_date: '',
+    assigned_driver_id: '',
+    customer_id: '',
   });
-  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
-  const [drivers, setDrivers] = useState<{ id: string; name: string }[]>([]);
+  
+  const [departureDate, setDepartureDate] = useState<Date | undefined>(undefined);
+  const [arrivalDate, setArrivalDate] = useState<Date | undefined>(undefined);
+  const [customers, setCustomers] = useState<UserProfile[]>([]);
+  const [drivers, setDrivers] = useState<UserProfile[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [customersLoading, setCustomersLoading] = useState(true);
+  const [driversLoading, setDriversLoading] = useState(true);
+  
+  const navigate = useNavigate();
+  const { verifyOnBlockchain } = useBlockchain();
+  const { user } = useAuth();
 
-  // In a real app, we would fetch customers and drivers on component mount
+  // Load customers and drivers on component mount
   useState(() => {
-    // Simulate fetching customers and drivers
-    setCustomers([
-      { id: '1', name: 'Acme Corp' },
-      { id: '2', name: 'Globex Industries' },
-      { id: '3', name: 'Initech' },
-    ]);
-    
-    setDrivers([
-      { id: '1', name: 'John Driver' },
-      { id: '2', name: 'Maria Transport' },
-      { id: '3', name: 'Alex Freight' },
-    ]);
+    fetchUsers();
   });
 
-  const handleChange = (field: keyof ShipmentForm, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const fetchUsers = async () => {
+    try {
+      // Fetch customers
+      setCustomersLoading(true);
+      const { data: customerData, error: customerError } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'customer');
+      
+      if (customerError) throw customerError;
+      
+      const customerIds = customerData.map(item => item.user_id);
+      
+      if (customerIds.length > 0) {
+        const { data: customerProfiles, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .in('id', customerIds);
+        
+        if (profileError) throw profileError;
+        
+        setCustomers(customerProfiles || []);
+      }
+      
+      setCustomersLoading(false);
+      
+      // Fetch drivers
+      setDriversLoading(true);
+      const { data: driverData, error: driverError } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'driver');
+      
+      if (driverError) throw driverError;
+      
+      const driverIds = driverData.map(item => item.user_id);
+      
+      if (driverIds.length > 0) {
+        const { data: driverProfiles, error: driverProfileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .in('id', driverIds);
+        
+        if (driverProfileError) throw driverProfileError;
+        
+        setDrivers(driverProfiles || []);
+      }
+      
+      setDriversLoading(false);
+    } catch (err) {
+      console.error('Error fetching users:', err);
+      toast.error('Failed to load users');
+      setCustomersLoading(false);
+      setDriversLoading(false);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const calculateCarbonFootprint = (): number => {
-    // This is a simplified model - in reality, this would be much more complex
-    const distance = 100; // km (would calculate from origin/destination)
-    const weight = formData.weight || 0;
+    // This is a simplified calculation for demo purposes
+    // In a real application, this would use more complex algorithms based on:
+    // - Distance between origin and destination
+    // - Transport type (truck, ship, etc.)
+    // - Weight of the shipment
+    // - Other factors like fuel efficiency
     
-    let emissionFactor = 0;
-    switch (formData.transportType) {
-      case 'truck':
-        emissionFactor = 0.1; // kg CO2 per ton-km
-        break;
-      case 'ship':
-        emissionFactor = 0.02;
-        break;
-      case 'rail':
-        emissionFactor = 0.03;
-        break;
-      case 'air':
-        emissionFactor = 0.5;
-        break;
-      case 'multi-modal':
-        emissionFactor = 0.15;
-        break;
-      default:
-        emissionFactor = 0.1;
-    }
+    const baseEmissions = {
+      truck: 62, // g CO2 per ton-km
+      rail: 22,  // g CO2 per ton-km
+      ship: 8,   // g CO2 per ton-km
+      air: 602,  // g CO2 per ton-km
+      'multi-modal': 40 // g CO2 per ton-km (average)
+    };
     
-    return Math.round(distance * (weight / 1000) * emissionFactor * 100) / 100;
-  };
-
-  const generateTrackingId = (): string => {
-    // Generate a random tracking ID in format ECO-XXXXX-XXXXX
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = 'ECO-';
-    for (let i = 0; i < 5; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    result += '-';
-    for (let i = 0; i < 5; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
+    // Simplified distance estimate (would use Google Maps Distance Matrix API in production)
+    const distance = 500; // km
+    
+    // Calculate emissions in kg
+    const emissionFactor = baseEmissions[formData.transport_type as keyof typeof baseEmissions];
+    const weight = formData.weight / 1000; // Convert to tons
+    const emissions = (emissionFactor * weight * distance) / 1000; // Convert g to kg
+    
+    return Math.round(emissions * 100) / 100; // Round to 2 decimal places
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.title || !formData.origin || !formData.destination || !formData.transportType || !formData.customerId) {
-      toast.error('Please fill in all required fields');
+    if (!departureDate || !arrivalDate) {
+      toast.error('Please select departure and arrival dates');
+      return;
+    }
+    
+    if (!formData.assigned_driver_id || !formData.customer_id) {
+      toast.error('Please select both a driver and a customer');
       return;
     }
     
     try {
       setLoading(true);
       
+      // Generate a tracking ID
+      const trackingId = `ECO-${nanoid(8).toUpperCase()}`;
+      
       // Calculate carbon footprint
       const carbonFootprint = calculateCarbonFootprint();
       
-      // Generate tracking ID
-      const trackingId = generateTrackingId();
-      
-      // Register the shipment on blockchain first (if integrated)
-      const blockchainData = {
-        transportType: formData.transportType,
+      // Create the shipment
+      const newShipment = {
+        title: formData.title,
+        description: formData.description,
         origin: formData.origin,
         destination: formData.destination,
-        carbonFootprint
+        status: 'processing',
+        planned_departure_date: departureDate.toISOString(),
+        estimated_arrival_date: arrivalDate.toISOString(),
+        product_type: formData.product_type,
+        quantity: formData.quantity,
+        weight: formData.weight,
+        carbon_footprint: carbonFootprint,
+        transport_type: formData.transport_type,
+        assigned_driver_id: formData.assigned_driver_id,
+        customer_id: formData.customer_id,
+        tracking_id: trackingId
       };
       
-      const blockchainResult = await registerShipment(blockchainData);
-      
-      // Create the shipment in the database
-      const { data, error } = await supabase
+      const { data: shipmentData, error } = await supabase
         .from('shipments')
-        .insert({
-          title: formData.title,
-          description: formData.description,
-          origin: formData.origin,
-          destination: formData.destination,
-          product_type: formData.productType,
-          quantity: formData.quantity,
-          weight: formData.weight,
-          transport_type: formData.transportType,
-          planned_departure_date: formData.departureDate,
-          estimated_arrival_date: formData.estimatedArrival,
-          customer_id: formData.customerId,
-          assigned_driver_id: formData.driverId,
-          status: 'processing',
-          carbon_footprint: carbonFootprint,
-          blockchain_tx_hash: blockchainResult?.transactionHash || null,
-          tracking_id: trackingId
-        })
+        .insert([newShipment])
         .select()
         .single();
       
       if (error) throw error;
       
+      // Record on blockchain
+      try {
+        const blockchainData = {
+          shipmentId: shipmentData.id,
+          trackingId,
+          origin: formData.origin,
+          destination: formData.destination,
+          carbonFootprint
+        };
+        
+        const txHash = await verifyOnBlockchain(blockchainData);
+        
+        // Update the shipment with the blockchain tx hash
+        if (txHash) {
+          await supabase
+            .from('shipments')
+            .update({ blockchain_tx_hash: txHash })
+            .eq('id', shipmentData.id);
+        }
+      } catch (blockchainError) {
+        console.error('Blockchain verification failed, but shipment was created:', blockchainError);
+      }
+      
       toast.success('Shipment created successfully');
-      navigate(`/shipment/${data.id}`);
-    } catch (error) {
-      console.error('Error creating shipment:', error);
+      navigate('/manager');
+    } catch (err) {
+      console.error('Error creating shipment:', err);
       toast.error('Failed to create shipment');
     } finally {
       setLoading(false);
@@ -188,13 +250,11 @@ const CreateShipment = () => {
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-eco-dark">Create New Shipment</h1>
-            <p className="text-muted-foreground">Set up a new shipment with customer and delivery details</p>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-eco-dark">Create New Shipment</h1>
+          <p className="text-muted-foreground">Set up a new shipment with carbon tracking</p>
         </div>
-
+        
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-2">
@@ -209,127 +269,123 @@ const CreateShipment = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div>
-                    <label htmlFor="title" className="block text-sm font-medium mb-1">
-                      Shipment Title <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      id="title"
-                      value={formData.title}
-                      onChange={(e) => handleChange('title', e.target.value)}
-                      placeholder="e.g., Office Supplies for Acme Corp"
-                      required
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="title">Shipment Title</Label>
+                      <Input
+                        id="title"
+                        name="title"
+                        placeholder="Enter a descriptive title"
+                        value={formData.title}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="product_type">Product Type</Label>
+                      <Input
+                        id="product_type"
+                        name="product_type"
+                        placeholder="e.g. Electronics, Food, etc."
+                        value={formData.product_type}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
                   </div>
-
-                  <div>
-                    <label htmlFor="description" className="block text-sm font-medium mb-1">
-                      Description
-                    </label>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
                     <Textarea
                       id="description"
+                      name="description"
+                      placeholder="Provide additional details about the shipment"
                       value={formData.description}
-                      onChange={(e) => handleChange('description', e.target.value)}
-                      placeholder="Add details about the shipment contents..."
+                      onChange={handleInputChange}
                       rows={3}
                     />
                   </div>
-
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="origin" className="block text-sm font-medium mb-1">
-                        Origin <span className="text-red-500">*</span>
-                      </label>
+                    <div className="space-y-2">
+                      <Label htmlFor="origin">Origin</Label>
                       <Input
                         id="origin"
+                        name="origin"
+                        placeholder="City, Country"
                         value={formData.origin}
-                        onChange={(e) => handleChange('origin', e.target.value)}
-                        placeholder="e.g., New York, NY"
+                        onChange={handleInputChange}
                         required
                       />
                     </div>
-                    <div>
-                      <label htmlFor="destination" className="block text-sm font-medium mb-1">
-                        Destination <span className="text-red-500">*</span>
-                      </label>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="destination">Destination</Label>
                       <Input
                         id="destination"
+                        name="destination"
+                        placeholder="City, Country"
                         value={formData.destination}
-                        onChange={(e) => handleChange('destination', e.target.value)}
-                        placeholder="e.g., Los Angeles, CA"
+                        onChange={handleInputChange}
                         required
                       />
                     </div>
                   </div>
-
-                  <div>
-                    <label htmlFor="transportType" className="block text-sm font-medium mb-1">
-                      Transport Type <span className="text-red-500">*</span>
-                    </label>
-                    <Select
-                      value={formData.transportType}
-                      onValueChange={(value) => handleChange('transportType', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a transport type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {transportTypes.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
-                            <div className="flex items-center">
-                              {type.icon}
-                              <span className="ml-2">{type.label}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
+                  
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label htmlFor="productType" className="block text-sm font-medium mb-1">
-                        Product Type
-                      </label>
-                      <Input
-                        id="productType"
-                        value={formData.productType}
-                        onChange={(e) => handleChange('productType', e.target.value)}
-                        placeholder="e.g., Electronics"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="quantity" className="block text-sm font-medium mb-1">
-                        Quantity
-                      </label>
+                    <div className="space-y-2">
+                      <Label htmlFor="quantity">Quantity</Label>
                       <Input
                         id="quantity"
+                        name="quantity"
                         type="number"
                         min="1"
+                        placeholder="Number of items"
                         value={formData.quantity}
-                        onChange={(e) => handleChange('quantity', parseInt(e.target.value))}
+                        onChange={handleInputChange}
+                        required
                       />
                     </div>
-                    <div>
-                      <label htmlFor="weight" className="block text-sm font-medium mb-1">
-                        Weight (kg)
-                      </label>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="weight">Weight (kg)</Label>
                       <Input
                         id="weight"
+                        name="weight"
                         type="number"
                         min="0"
-                        step="0.1"
+                        step="0.01"
+                        placeholder="Total weight in kg"
                         value={formData.weight}
-                        onChange={(e) => handleChange('weight', parseFloat(e.target.value))}
+                        onChange={handleInputChange}
+                        required
                       />
                     </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="transport_type">Transport Type</Label>
+                      <Select
+                        value={formData.transport_type}
+                        onValueChange={(value) => handleSelectChange('transport_type', value)}
+                      >
+                        <SelectTrigger id="transport_type">
+                          <SelectValue placeholder="Select transport type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="truck">Truck</SelectItem>
+                          <SelectItem value="rail">Rail</SelectItem>
+                          <SelectItem value="ship">Ship</SelectItem>
+                          <SelectItem value="air">Air</SelectItem>
+                          <SelectItem value="multi-modal">Multi-modal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Planned Departure Date
-                      </label>
+                    <div className="space-y-2">
+                      <Label htmlFor="planned_departure_date">Planned Departure Date</Label>
                       <Popover>
                         <PopoverTrigger asChild>
                           <Button
@@ -337,26 +393,22 @@ const CreateShipment = () => {
                             className="w-full justify-start text-left font-normal"
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {formData.departureDate ? (
-                              format(formData.departureDate, 'PPP')
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
+                            {departureDate ? format(departureDate, 'PPP') : <span>Select date</span>}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
+                        <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
                             mode="single"
-                            selected={formData.departureDate || undefined}
-                            onSelect={(date) => handleChange('departureDate', date)}
+                            selected={departureDate}
+                            onSelect={setDepartureDate}
+                            initialFocus
                           />
                         </PopoverContent>
                       </Popover>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Estimated Arrival Date
-                      </label>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="estimated_arrival_date">Estimated Arrival Date</Label>
                       <Popover>
                         <PopoverTrigger asChild>
                           <Button
@@ -364,18 +416,15 @@ const CreateShipment = () => {
                             className="w-full justify-start text-left font-normal"
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {formData.estimatedArrival ? (
-                              format(formData.estimatedArrival, 'PPP')
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
+                            {arrivalDate ? format(arrivalDate, 'PPP') : <span>Select date</span>}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
+                        <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
                             mode="single"
-                            selected={formData.estimatedArrival || undefined}
-                            onSelect={(date) => handleChange('estimatedArrival', date)}
+                            selected={arrivalDate}
+                            onSelect={setArrivalDate}
+                            initialFocus
                           />
                         </PopoverContent>
                       </Popover>
@@ -384,81 +433,116 @@ const CreateShipment = () => {
                 </div>
               </CardContent>
             </Card>
-
+            
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <ArrowRight className="mr-2 h-5 w-5 text-eco-purple" />
-                  Assignment
+                  <Truck className="mr-2 h-5 w-5 text-eco-purple" />
+                  Assignment & Summary
                 </CardTitle>
                 <CardDescription>
-                  Assign customer and driver
+                  Assign to driver and customer
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="customerId" className="block text-sm font-medium mb-1">
-                      Customer <span className="text-red-500">*</span>
-                    </label>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="assigned_driver_id">Assigned Driver</Label>
                     <Select
-                      value={formData.customerId}
-                      onValueChange={(value) => handleChange('customerId', value)}
+                      value={formData.assigned_driver_id}
+                      onValueChange={(value) => handleSelectChange('assigned_driver_id', value)}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a customer" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {customers.map((customer) => (
-                          <SelectItem key={customer.id} value={customer.id}>
-                            {customer.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="driverId" className="block text-sm font-medium mb-1">
-                      Assign Driver (Optional)
-                    </label>
-                    <Select
-                      value={formData.driverId || ''}
-                      onValueChange={(value) => handleChange('driverId', value || null)}
-                    >
-                      <SelectTrigger>
+                      <SelectTrigger id="assigned_driver_id">
                         <SelectValue placeholder="Select a driver" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Not assigned yet</SelectItem>
-                        {drivers.map((driver) => (
-                          <SelectItem key={driver.id} value={driver.id}>
-                            {driver.name}
-                          </SelectItem>
-                        ))}
+                        {driversLoading ? (
+                          <SelectItem value="" disabled>Loading drivers...</SelectItem>
+                        ) : drivers.length === 0 ? (
+                          <SelectItem value="" disabled>No drivers available</SelectItem>
+                        ) : (
+                          drivers.map((driver) => (
+                            <SelectItem key={driver.id} value={driver.id}>
+                              {driver.full_name}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
-
-                  <div className="pt-4">
-                    <Button 
-                      type="submit" 
-                      className="w-full bg-eco-purple hover:bg-eco-purple/90"
-                      disabled={loading || blockchainLoading}
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="customer_id">Customer</Label>
+                    <Select
+                      value={formData.customer_id}
+                      onValueChange={(value) => handleSelectChange('customer_id', value)}
                     >
-                      {loading || blockchainLoading ? (
-                        <>
-                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Creating Shipment...
-                        </>
-                      ) : (
-                        'Create Shipment'
-                      )}
-                    </Button>
+                      <SelectTrigger id="customer_id">
+                        <SelectValue placeholder="Select a customer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {customersLoading ? (
+                          <SelectItem value="" disabled>Loading customers...</SelectItem>
+                        ) : customers.length === 0 ? (
+                          <SelectItem value="" disabled>No customers available</SelectItem>
+                        ) : (
+                          customers.map((customer) => (
+                            <SelectItem key={customer.id} value={customer.id}>
+                              {customer.full_name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  
+                  <div className="border-t pt-4 mt-4">
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="text-sm font-medium">Estimated Carbon Footprint</h3>
+                        <div className="flex items-center mt-2">
+                          <Leaf className="h-5 w-5 text-green-500 mr-2" />
+                          <span className="text-xl font-bold">
+                            {formData.weight > 0 && formData.transport_type ? 
+                              `${calculateCarbonFootprint()} kg CO₂` : 
+                              '0 kg CO₂'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Based on weight, distance, and transport method
+                        </p>
+                      </div>
+                      
+                      {(formData.transport_type === 'truck' || formData.transport_type === 'air') && (
+                        <div className="bg-yellow-50 p-3 rounded-md border border-yellow-200">
+                          <p className="text-sm text-yellow-800 flex items-start">
+                            <AlertTriangle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
+                            <span>
+                              Consider using rail or ship transport to reduce carbon emissions by up to 90%.
+                            </span>
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <Button
+                    type="submit"
+                    className="w-full bg-eco-purple hover:bg-eco-purple/90"
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <div className="flex items-center">
+                        <div className="animate-spin mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full"></div>
+                        Creating Shipment...
+                      </div>
+                    ) : (
+                      <div className="flex items-center">
+                        <Package className="mr-2 h-4 w-4" />
+                        Create Shipment
+                      </div>
+                    )}
+                  </Button>
                 </div>
               </CardContent>
             </Card>

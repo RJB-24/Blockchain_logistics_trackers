@@ -1,166 +1,267 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import DashboardLayout from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { CarbonFootprintChart } from '@/components/sustainability/CarbonFootprintChart';
-import { SustainabilityScore } from '@/components/sustainability/SustainabilityScore';
-import { Leaf, BarChart, Download, Calendar, Share2, Printer, RefreshCw } from 'lucide-react';
+import DashboardLayout from '@/components/layout/DashboardLayout';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { toast } from 'sonner';
+import { Leaf, Download, AlertTriangle, TrendingDown, Truck, Ship, Train } from 'lucide-react';
+import { useBlockchain } from '@/hooks/useBlockchain';
+import CarbonFootprintChart from '@/components/sustainability/CarbonFootprintChart';
+import SustainabilityScore from '@/components/sustainability/SustainabilityScore';
 
-interface ShipmentCarbonData {
+// Define interfaces for data types
+interface Shipment {
   id: string;
   title: string;
   tracking_id: string;
-  transport_type: string;
+  status: string;
   origin: string;
   destination: string;
+  customer_id: string;
+  transport_type: string;
   carbon_footprint: number;
   created_at: string;
 }
 
+interface CarbonData {
+  totalFootprint: number;
+  averagePerShipment: number;
+  transportBreakdown: {
+    truck: number;
+    rail: number;
+    ship: number;
+    air: number;
+    multimodal: number;
+  };
+  monthlyData: {
+    month: string;
+    carbon: number;
+  }[];
+  reductionTips: string[];
+  sustainabilityScore: number;
+}
+
 const CarbonReport = () => {
-  const { user } = useAuth();
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [carbonData, setCarbonData] = useState<CarbonData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [shipments, setShipments] = useState<ShipmentCarbonData[]>([]);
-  const [timeframe, setTimeframe] = useState('all');
-  const [transportFilter, setTransportFilter] = useState('all');
-  
-  // Carbon totals
-  const [totalCarbon, setTotalCarbon] = useState(0);
-  const [carbonSaved, setCarbonSaved] = useState(0);
-  const [sustainabilityScore, setSustainabilityScore] = useState(0);
+  const [period, setPeriod] = useState<'month' | 'quarter' | 'year'>('month');
+  const [verifying, setVerifying] = useState(false);
+  const { user } = useAuth();
+  const { verifyOnBlockchain } = useBlockchain();
 
   useEffect(() => {
     if (user) {
-      fetchShipmentCarbonData();
+      fetchShipments();
     }
-  }, [user]);
+  }, [user, period]);
 
-  const fetchShipmentCarbonData = async () => {
+  const fetchShipments = async () => {
     try {
       setLoading(true);
       
-      // Fetch shipments for the current customer
+      // Define the time period for filtering
+      const now = new Date();
+      let startDate = new Date();
+      
+      if (period === 'month') {
+        startDate.setMonth(now.getMonth() - 1);
+      } else if (period === 'quarter') {
+        startDate.setMonth(now.getMonth() - 3);
+      } else {
+        startDate.setFullYear(now.getFullYear() - 1);
+      }
+      
+      // Fetch shipments for the user within the time period
       const { data, error } = await supabase
         .from('shipments')
-        .select('id, title, tracking_id, transport_type, origin, destination, carbon_footprint, created_at')
+        .select('*')
         .eq('customer_id', user?.id)
+        .gte('created_at', startDate.toISOString())
         .order('created_at', { ascending: false });
       
       if (error) throw error;
       
       setShipments(data || []);
       
-      // Calculate totals
-      if (data) {
-        const total = data.reduce((sum, shipment) => sum + (shipment.carbon_footprint || 0), 0);
-        setTotalCarbon(total);
-        
-        // Simplified calculation for carbon saved (in reality this would be more complex)
-        // Assuming 30% savings compared to industry average
-        setCarbonSaved(total * 0.3);
-        
-        // Calculate sustainability score (0-100) based on transport types
-        const score = calculateSustainabilityScore(data);
-        setSustainabilityScore(score);
+      // Process the data to generate carbon report
+      if (data && data.length > 0) {
+        processShipmentData(data);
+      } else {
+        setCarbonData(null);
       }
-    } catch (error) {
-      console.error('Error fetching carbon data:', error);
-      toast.error('Failed to load carbon report data');
+    } catch (err) {
+      console.error('Error fetching shipments:', err);
+      toast.error('Failed to load carbon data');
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateSustainabilityScore = (shipments: ShipmentCarbonData[]): number => {
-    if (!shipments.length) return 0;
+  const processShipmentData = (data: Shipment[]) => {
+    // Calculate total carbon footprint
+    const totalFootprint = data.reduce((sum, shipment) => sum + shipment.carbon_footprint, 0);
     
-    // Different transport types have different sustainability weights
-    const weights: {[key: string]: number} = {
-      rail: 90,
-      ship: 70,
-      truck: 40,
-      air: 20,
-      'multi-modal': 60
+    // Calculate average per shipment
+    const averagePerShipment = totalFootprint / data.length;
+    
+    // Calculate transport type breakdown
+    const transportBreakdown = {
+      truck: 0,
+      rail: 0,
+      ship: 0,
+      air: 0,
+      multimodal: 0
     };
     
-    // Calculate weighted average
-    let totalWeight = 0;
-    let weightedSum = 0;
-    
-    shipments.forEach(shipment => {
-      const weight = weights[shipment.transport_type] || 50;
-      weightedSum += weight;
-      totalWeight++;
+    data.forEach(shipment => {
+      const type = shipment.transport_type === 'multi-modal' ? 'multimodal' : shipment.transport_type;
+      if (type in transportBreakdown) {
+        transportBreakdown[type as keyof typeof transportBreakdown] += shipment.carbon_footprint;
+      }
     });
     
-    return Math.round(weightedSum / totalWeight);
-  };
-
-  const filterShipments = () => {
-    let filtered = [...shipments];
+    // Generate monthly data for chart
+    const monthlyData: { month: string; carbon: number }[] = [];
+    const months: Record<string, number> = {};
     
-    // Filter by timeframe
-    if (timeframe !== 'all') {
-      const now = new Date();
-      let cutoffDate = new Date();
+    data.forEach(shipment => {
+      const date = new Date(shipment.created_at);
+      const monthYear = `${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`;
       
-      switch (timeframe) {
-        case 'month':
-          cutoffDate.setMonth(now.getMonth() - 1);
-          break;
-        case 'quarter':
-          cutoffDate.setMonth(now.getMonth() - 3);
-          break;
-        case 'year':
-          cutoffDate.setFullYear(now.getFullYear() - 1);
-          break;
+      if (!months[monthYear]) {
+        months[monthYear] = 0;
       }
       
-      filtered = filtered.filter(shipment => new Date(shipment.created_at) >= cutoffDate);
+      months[monthYear] += shipment.carbon_footprint;
+    });
+    
+    Object.entries(months).forEach(([month, carbon]) => {
+      monthlyData.push({ month, carbon });
+    });
+    
+    // Sort monthly data chronologically
+    monthlyData.sort((a, b) => {
+      const [monthA, yearA] = a.month.split(' ');
+      const [monthB, yearB] = b.month.split(' ');
+      
+      if (yearA !== yearB) {
+        return parseInt(yearA) - parseInt(yearB);
+      }
+      
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return monthNames.indexOf(monthA) - monthNames.indexOf(monthB);
+    });
+    
+    // Generate reduction tips based on transport types
+    const reductionTips: string[] = [];
+    
+    if (transportBreakdown.truck > 0) {
+      reductionTips.push('Consider using rail transport for long-distance shipments to reduce emissions by up to 75%.');
     }
     
-    // Filter by transport type
-    if (transportFilter !== 'all') {
-      filtered = filtered.filter(shipment => shipment.transport_type === transportFilter);
+    if (transportBreakdown.air > 0) {
+      reductionTips.push('Air freight has the highest carbon footprint. When possible, use sea or rail alternatives.');
     }
     
-    return filtered;
+    if (transportBreakdown.ship > 0 && transportBreakdown.ship < totalFootprint * 0.5) {
+      reductionTips.push('Increase the proportion of sea freight in your logistics mix for better sustainability.');
+    }
+    
+    reductionTips.push('Consolidate shipments to reduce the total number of trips and associated emissions.');
+    reductionTips.push('Choose carriers with eco-friendly vehicle fleets and carbon offset programs.');
+    
+    // Calculate sustainability score (0-100)
+    // This is a simplified calculation for demo purposes
+    let sustainabilityScore = 0;
+    
+    // Lower average carbon footprint is better
+    if (averagePerShipment < 50) sustainabilityScore += 30;
+    else if (averagePerShipment < 100) sustainabilityScore += 20;
+    else if (averagePerShipment < 200) sustainabilityScore += 10;
+    
+    // More sustainable transport types (ship, rail) get higher scores
+    const sustainableTransport = transportBreakdown.ship + transportBreakdown.rail;
+    const unsustainableTransport = transportBreakdown.truck + transportBreakdown.air;
+    
+    if (sustainableTransport > unsustainableTransport) {
+      sustainabilityScore += 40;
+    } else if (sustainableTransport > 0) {
+      sustainabilityScore += 20;
+    }
+    
+    // Bonus points for having multiple transport types (multimodal)
+    if (transportBreakdown.multimodal > 0) {
+      sustainabilityScore += 10;
+    }
+    
+    // Base score that everyone gets
+    sustainabilityScore += 20;
+    
+    // Cap at 100
+    sustainabilityScore = Math.min(sustainabilityScore, 100);
+    
+    setCarbonData({
+      totalFootprint,
+      averagePerShipment,
+      transportBreakdown,
+      monthlyData,
+      reductionTips,
+      sustainabilityScore
+    });
   };
 
-  const filteredShipments = filterShipments();
-  
-  const getTransportTypeColor = (type: string): string => {
+  const verifyReportOnBlockchain = async () => {
+    if (!carbonData || !user) return;
+    
+    try {
+      setVerifying(true);
+      
+      const blockchainData = {
+        userId: user.id,
+        totalCarbonFootprint: carbonData.totalFootprint,
+        sustainabilityScore: carbonData.sustainabilityScore,
+        timestamp: new Date().toISOString()
+      };
+      
+      const txHash = await verifyOnBlockchain(blockchainData);
+      
+      if (txHash) {
+        toast.success('Carbon report verified on blockchain');
+      }
+    } catch (err) {
+      console.error('Error verifying on blockchain:', err);
+      toast.error('Failed to verify report on blockchain');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const downloadReport = () => {
+    if (!carbonData) return;
+    
+    // In a real app, this would generate a PDF report
+    // For this demo, we'll just show a toast
+    toast.success('Carbon report downloaded');
+  };
+
+  const getTransportIcon = (type: string) => {
     switch (type) {
       case 'truck':
-        return 'bg-amber-500';
-      case 'rail':
-        return 'bg-eco-green';
+        return <Truck className="h-4 w-4" />;
       case 'ship':
-        return 'bg-blue-500';
-      case 'air':
-        return 'bg-red-500';
-      case 'multi-modal':
-        return 'bg-purple-500';
+        return <Ship className="h-4 w-4" />;
+      case 'rail':
+        return <Train className="h-4 w-4" />;
       default:
-        return 'bg-gray-500';
+        return <Truck className="h-4 w-4" />;
     }
-  };
-
-  const handleDownloadReport = () => {
-    toast.info('Downloading carbon report as PDF...');
-    // In a real app, this would generate and download a PDF report
   };
 
   return (
@@ -169,238 +270,227 @@ const CarbonReport = () => {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-eco-dark">Carbon Footprint Report</h1>
-            <p className="text-muted-foreground">Monitor and reduce your shipping carbon emissions</p>
+            <p className="text-muted-foreground">Track and analyze your shipping emissions</p>
           </div>
-          <Button 
-            className="bg-eco-purple hover:bg-eco-purple/90"
-            onClick={handleDownloadReport}
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Download Report
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center">
-                <Leaf className="mr-2 h-5 w-5 text-eco-green" />
-                Total Carbon Footprint
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{totalCarbon.toFixed(2)} kg CO₂</div>
-              <p className="text-muted-foreground text-sm">Across all shipments</p>
-            </CardContent>
-          </Card>
           
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center">
-                <Leaf className="mr-2 h-5 w-5 text-eco-green" />
-                Carbon Emissions Saved
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-eco-green">{carbonSaved.toFixed(2)} kg CO₂</div>
-              <p className="text-muted-foreground text-sm">Compared to industry average</p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center">
-                <BarChart className="mr-2 h-5 w-5 text-eco-purple" />
-                Sustainability Score
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SustainabilityScore score={sustainabilityScore} />
-            </CardContent>
-          </Card>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              onClick={downloadReport}
+              disabled={!carbonData || loading}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download Report
+            </Button>
+            
+            <Button 
+              onClick={verifyReportOnBlockchain}
+              disabled={!carbonData || verifying || loading}
+              className="bg-eco-purple hover:bg-eco-purple/90"
+            >
+              {verifying ? (
+                <>
+                  <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  <Leaf className="mr-2 h-4 w-4" />
+                  Verify on Blockchain
+                </>
+              )}
+            </Button>
+          </div>
         </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <BarChart className="mr-2 h-5 w-5 text-eco-purple" />
-                Carbon Footprint Trends
-              </CardTitle>
-              <CardDescription>
-                Carbon emissions over time by transport type
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="h-80">
-              <CarbonFootprintChart 
-                data={filteredShipments.map(s => ({
-                  date: new Date(s.created_at).toLocaleDateString(), 
-                  value: s.carbon_footprint,
-                  type: s.transport_type
-                }))}
-              />
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Calendar className="mr-2 h-5 w-5 text-eco-purple" />
-                Filter Report
-              </CardTitle>
-              <CardDescription>
-                Customize your carbon report view
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label htmlFor="timeframe" className="text-sm font-medium">
-                    Time Period
-                  </label>
-                  <Select
-                    value={timeframe}
-                    onValueChange={setTimeframe}
-                  >
-                    <SelectTrigger id="timeframe">
-                      <SelectValue placeholder="Select time period" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Time</SelectItem>
-                      <SelectItem value="month">Last Month</SelectItem>
-                      <SelectItem value="quarter">Last Quarter</SelectItem>
-                      <SelectItem value="year">Last Year</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-2">
-                  <label htmlFor="transport" className="text-sm font-medium">
-                    Transport Type
-                  </label>
-                  <Select
-                    value={transportFilter}
-                    onValueChange={setTransportFilter}
-                  >
-                    <SelectTrigger id="transport">
-                      <SelectValue placeholder="Select transport type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Transport Types</SelectItem>
-                      <SelectItem value="truck">Truck</SelectItem>
-                      <SelectItem value="rail">Rail</SelectItem>
-                      <SelectItem value="ship">Ship</SelectItem>
-                      <SelectItem value="air">Air</SelectItem>
-                      <SelectItem value="multi-modal">Multi-modal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="pt-4">
-                  <Button 
-                    variant="outline" 
-                    className="w-full"
-                    onClick={() => {
-                      setTimeframe('all');
-                      setTransportFilter('all');
-                    }}
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Reset Filters
-                  </Button>
-                </div>
-                
-                <div className="pt-2">
-                  <Button className="w-full" variant="outline">
-                    <Printer className="mr-2 h-4 w-4" />
-                    Print Report
-                  </Button>
-                </div>
-                
-                <div>
-                  <Button className="w-full" variant="outline">
-                    <Share2 className="mr-2 h-4 w-4" />
-                    Share Report
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        
+        <div className="mb-6">
+          <Tabs defaultValue={period} onValueChange={(value) => setPeriod(value as any)}>
+            <TabsList>
+              <TabsTrigger value="month">Last Month</TabsTrigger>
+              <TabsTrigger value="quarter">Last Quarter</TabsTrigger>
+              <TabsTrigger value="year">Last Year</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Leaf className="mr-2 h-5 w-5 text-eco-green" />
-              Shipment Carbon Details
-            </CardTitle>
-            <CardDescription>
-              Carbon footprint breakdown by shipment ({filteredShipments.length} shipments)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex justify-center py-12">
-                <RefreshCw className="h-8 w-8 animate-spin text-eco-purple" />
-              </div>
-            ) : filteredShipments.length === 0 ? (
-              <div className="text-center py-12">
-                <Leaf className="h-12 w-12 mx-auto text-muted-foreground opacity-20 mb-4" />
-                <p className="text-muted-foreground">No shipments found for the selected filters.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Tracking ID</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Shipment</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Route</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Transport</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Date</th>
-                      <th className="text-right py-3 px-4 font-medium text-muted-foreground">Carbon</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredShipments.map((shipment) => (
-                      <tr key={shipment.id} className="border-b hover:bg-muted/50">
-                        <td className="py-3 px-4 font-medium">{shipment.tracking_id}</td>
-                        <td className="py-3 px-4">{shipment.title}</td>
-                        <td className="py-3 px-4">
-                          <span className="truncate block max-w-[150px]">
-                            {shipment.origin} → {shipment.destination}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge className={getTransportTypeColor(shipment.transport_type)}>
-                            {shipment.transport_type}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4">{new Date(shipment.created_at).toLocaleDateString()}</td>
-                        <td className="py-3 px-4 text-right font-medium">
-                          {shipment.carbon_footprint.toFixed(2)} kg CO₂
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-          <CardFooter className="border-t px-6 py-4">
-            <div className="flex justify-between items-center w-full">
-              <p className="text-sm text-muted-foreground">
-                Showing {filteredShipments.length} of {shipments.length} shipments
-              </p>
-              <div className="text-sm">
-                <span className="font-medium">Total for filtered shipments: </span>
-                <span className="font-bold text-eco-purple">
-                  {filteredShipments.reduce((sum, s) => sum + s.carbon_footprint, 0).toFixed(2)} kg CO₂
-                </span>
-              </div>
+        
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin h-8 w-8 border-4 border-eco-purple border-t-transparent rounded-full"></div>
+          </div>
+        ) : !carbonData ? (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>No data available</AlertTitle>
+            <AlertDescription>
+              We couldn't find any shipment data for the selected period. Try selecting a different time range or check back after you've completed some shipments.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg">Total Carbon Footprint</CardTitle>
+                  <CardDescription>For the selected period</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center">
+                    <Leaf className="h-8 w-8 text-green-500 mr-2" />
+                    <span className="text-3xl font-bold">{carbonData.totalFootprint.toFixed(2)}</span>
+                    <span className="ml-1 text-muted-foreground">kg CO₂</span>
+                  </div>
+                  
+                  <p className="text-sm text-muted-foreground mt-2">
+                    From {shipments.length} shipments
+                  </p>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg">Average per Shipment</CardTitle>
+                  <CardDescription>Carbon efficiency</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center">
+                    <TrendingDown className="h-8 w-8 text-eco-purple mr-2" />
+                    <span className="text-3xl font-bold">{carbonData.averagePerShipment.toFixed(2)}</span>
+                    <span className="ml-1 text-muted-foreground">kg CO₂</span>
+                  </div>
+                  
+                  {carbonData.averagePerShipment < 100 ? (
+                    <Badge className="mt-2 bg-green-500">Low Emissions</Badge>
+                  ) : carbonData.averagePerShipment < 200 ? (
+                    <Badge className="mt-2 bg-yellow-500">Medium Emissions</Badge>
+                  ) : (
+                    <Badge className="mt-2 bg-red-500">High Emissions</Badge>
+                  )}
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg">Sustainability Score</CardTitle>
+                  <CardDescription>Based on your shipping choices</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <SustainabilityScore score={carbonData.sustainabilityScore} />
+                </CardContent>
+              </Card>
             </div>
-          </CardFooter>
-        </Card>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle>Carbon Emissions Over Time</CardTitle>
+                  <CardDescription>
+                    Track your progress in reducing emissions
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-80">
+                    <CarbonFootprintChart data={carbonData.monthlyData} />
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>Transport Type Breakdown</CardTitle>
+                  <CardDescription>
+                    Carbon footprint by transport method
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {Object.entries(carbonData.transportBreakdown).map(([type, value]) => {
+                      if (value === 0) return null;
+                      
+                      const percentage = (value / carbonData.totalFootprint) * 100;
+                      
+                      return (
+                        <div key={type}>
+                          <div className="flex justify-between items-center mb-1">
+                            <div className="flex items-center">
+                              {getTransportIcon(type)}
+                              <span className="ml-2 capitalize">{type}</span>
+                            </div>
+                            <span>{value.toFixed(2)} kg</span>
+                          </div>
+                          <Progress value={percentage} className="h-2" />
+                          <p className="text-xs text-right mt-1 text-muted-foreground">
+                            {percentage.toFixed(1)}% of total
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle>Recent Shipments</CardTitle>
+                  <CardDescription>
+                    Carbon footprint of your recent shipments
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tracking ID</TableHead>
+                        <TableHead>Origin</TableHead>
+                        <TableHead>Destination</TableHead>
+                        <TableHead>Transport</TableHead>
+                        <TableHead className="text-right">Carbon Footprint</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {shipments.slice(0, 5).map((shipment) => (
+                        <TableRow key={shipment.id}>
+                          <TableCell className="font-medium">{shipment.tracking_id}</TableCell>
+                          <TableCell>{shipment.origin}</TableCell>
+                          <TableCell>{shipment.destination}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center">
+                              {getTransportIcon(shipment.transport_type)}
+                              <span className="ml-2 capitalize">{shipment.transport_type}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {shipment.carbon_footprint.toFixed(2)} kg
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>Reduction Tips</CardTitle>
+                  <CardDescription>
+                    How to lower your carbon footprint
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2">
+                    {carbonData.reductionTips.map((tip, index) => (
+                      <li key={index} className="flex items-start">
+                        <Leaf className="h-5 w-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm">{tip}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
       </div>
     </DashboardLayout>
   );

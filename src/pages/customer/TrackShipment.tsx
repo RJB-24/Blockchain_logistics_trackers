@@ -1,81 +1,166 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import MapView from '@/components/dashboard/MapView';
 import { toast } from 'sonner';
-import { Search, Package, Clock, Map, Route, ArrowRight, Loader2, LocateFixed } from 'lucide-react';
+import { MapPin, Truck, Clock, Package, Search, Calendar, ArrowRight, Leaf, FileText, Star, AlertTriangle } from 'lucide-react';
+
+// Define interfaces
+interface Shipment {
+  id: string;
+  title: string;
+  tracking_id: string;
+  status: 'processing' | 'in-transit' | 'delivered' | 'delayed';
+  origin: string;
+  destination: string;
+  customer_id: string;
+  carbon_footprint: number;
+  planned_departure_date: string;
+  estimated_arrival_date: string;
+  actual_arrival_date: string | null;
+  transport_type: string;
+  product_type: string;
+  quantity: number;
+  weight: number;
+  blockchain_tx_hash?: string;
+}
+
+interface SensorData {
+  id: string;
+  shipment_id: string;
+  timestamp: string;
+  temperature: number | null;
+  humidity: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  status: string;
+  location: string;
+  notes: string | null;
+}
 
 const TrackShipment = () => {
-  const navigate = useNavigate();
   const [trackingId, setTrackingId] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [shipment, setShipment] = useState<any>(null);
-  const [sensorData, setSensorData] = useState<any>(null);
+  const [shipment, setShipment] = useState<Shipment | null>(null);
+  const [sensorData, setSensorData] = useState<SensorData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [tab, setTab] = useState('status');
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const handleTrack = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // For demo purposes, auto-populate a tracking ID
+  useEffect(() => {
+    fetchUserShipments();
+  }, [user?.id]);
+
+  const fetchUserShipments = async () => {
+    if (!user) return;
     
+    try {
+      const { data, error } = await supabase
+        .from('shipments')
+        .select('tracking_id')
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        setTrackingId(data[0].tracking_id);
+      }
+    } catch (err) {
+      console.error('Error fetching shipments:', err);
+    }
+  };
+
+  const handleSearch = async () => {
     if (!trackingId.trim()) {
       toast.error('Please enter a tracking ID');
       return;
     }
     
-    setIsLoading(true);
+    setLoading(true);
+    setNotFound(false);
+    setShipment(null);
+    setSensorData([]);
+    
     try {
-      // First, get the shipment details
+      // Fetch the shipment
       const { data: shipmentData, error: shipmentError } = await supabase
         .from('shipments')
         .select('*')
-        .eq('tracking_id', trackingId)
-        .single();
+        .eq('tracking_id', trackingId.trim())
+        .maybeSingle();
       
       if (shipmentError) throw shipmentError;
       
       if (!shipmentData) {
-        toast.error('Shipment not found. Please check the tracking ID.');
-        setIsLoading(false);
+        setNotFound(true);
         return;
       }
       
-      // Then get the latest sensor data
-      const { data: sensorDataArr, error: sensorError } = await supabase
+      // Check if the shipment belongs to the current user
+      if (user && shipmentData.customer_id !== user.id) {
+        setNotFound(true);
+        toast.error('This shipment does not belong to your account');
+        return;
+      }
+      
+      setShipment(shipmentData as Shipment);
+      
+      // Fetch sensor data
+      const { data: sensorDataResult, error: sensorError } = await supabase
         .from('sensor_data')
         .select('*')
         .eq('shipment_id', shipmentData.id)
-        .order('timestamp', { ascending: false })
-        .limit(1);
+        .order('timestamp', { ascending: true });
       
       if (sensorError) throw sensorError;
       
-      setShipment(shipmentData);
-      setSensorData(sensorDataArr && sensorDataArr.length > 0 ? sensorDataArr[0] : null);
+      setSensorData(sensorDataResult || []);
       
-    } catch (error) {
-      console.error('Error tracking shipment:', error);
-      toast.error('Failed to track shipment. Please try again.');
+    } catch (err) {
+      console.error('Error tracking shipment:', err);
+      toast.error('Failed to retrieve shipment information');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleViewDetails = () => {
-    if (shipment) {
-      navigate(`/shipment/${shipment.id}`);
+  const getStatusStep = (status: string) => {
+    switch (status) {
+      case 'processing':
+        return 1;
+      case 'in-transit':
+        return 2;
+      case 'delivered':
+        return 4;
+      case 'delayed':
+        return 3;
+      default:
+        return 1;
     }
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'processing':
-        return <Badge className="bg-blue-500">Processing</Badge>;
+        return <Badge className="bg-yellow-500">Processing</Badge>;
       case 'in-transit':
-        return <Badge className="bg-amber-500">In Transit</Badge>;
+        return <Badge className="bg-blue-500">In Transit</Badge>;
       case 'delivered':
         return <Badge className="bg-green-500">Delivered</Badge>;
       case 'delayed':
@@ -85,282 +170,358 @@ const TrackShipment = () => {
     }
   };
 
-  const renderShipmentTimeline = () => {
-    if (!shipment) return null;
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString();
+  };
+
+  const getLatestLocation = () => {
+    if (sensorData.length === 0) return 'N/A';
     
-    const statusOrder = ['processing', 'in-transit', 'delivered'];
-    const currentStatusIndex = statusOrder.indexOf(shipment.status);
+    // Get the latest sensor data with location information
+    const latestData = [...sensorData]
+      .filter(data => data.location)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
     
-    return (
-      <div className="my-6">
-        <div className="flex justify-between mb-2">
-          {statusOrder.map((status, index) => (
-            <div 
-              key={status} 
-              className="flex flex-col items-center"
-              style={{ opacity: index <= currentStatusIndex ? 1 : 0.4 }}
-            >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                index <= currentStatusIndex ? 'bg-eco-purple text-white' : 'bg-gray-200'
-              }`}>
-                {index === 0 && <Package className="h-4 w-4" />}
-                {index === 1 && <Route className="h-4 w-4" />}
-                {index === 2 && <Check className="h-4 w-4" />}
-              </div>
-              <span className="text-xs mt-1 text-center capitalize">{status.replace('-', ' ')}</span>
-            </div>
-          ))}
-        </div>
-        
-        <div className="relative h-2 bg-gray-200 rounded-full mt-2">
-          <div
-            className="absolute h-2 bg-eco-purple rounded-full"
-            style={{
-              width: currentStatusIndex === 0 ? '15%' : 
-                   currentStatusIndex === 1 ? '50%' : 
-                   currentStatusIndex === 2 ? '100%' : '0%'
-            }}
-          ></div>
-        </div>
-      </div>
-    );
+    return latestData?.location || 'N/A';
+  };
+
+  const getMostRecentCoordinates = () => {
+    if (sensorData.length === 0) return null;
+    
+    // Get the latest sensor data with coordinates
+    const latestData = [...sensorData]
+      .filter(data => data.latitude !== null && data.longitude !== null)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+    
+    if (!latestData || latestData.latitude === null || latestData.longitude === null) {
+      return null;
+    }
+    
+    return {
+      lat: latestData.latitude,
+      lng: latestData.longitude
+    };
+  };
+
+  const calculateProgress = () => {
+    if (!shipment) return 0;
+    
+    const statusStep = getStatusStep(shipment.status);
+    return (statusStep / 4) * 100;
   };
 
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-eco-dark">Track Shipment</h1>
-            <p className="text-muted-foreground">Monitor your shipments in real-time</p>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-eco-dark">Track Shipment</h1>
+          <p className="text-muted-foreground">Monitor the status and location of your shipments</p>
         </div>
-
-        <div className="grid grid-cols-1 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Search className="mr-2 h-5 w-5 text-eco-purple" />
-                Enter Tracking ID
-              </CardTitle>
-              <CardDescription>
-                Track your shipment using the tracking ID provided
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleTrack} className="space-y-4">
-                <div className="flex space-x-2">
-                  <Input
-                    placeholder="Enter tracking ID (e.g., ECO-ABCDE-12345)"
-                    value={trackingId}
-                    onChange={(e) => setTrackingId(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button 
-                    type="submit" 
-                    className="bg-eco-purple hover:bg-eco-purple/90"
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                    <span className="ml-2">Track</span>
-                  </Button>
-                </div>
-                
-                <div className="text-sm text-muted-foreground">
-                  <p>Example tracking IDs: ECO-ABCDE-12345, ECO-XYZ78-90123</p>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-
-          {shipment && (
+        
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Enter Tracking ID</CardTitle>
+            <CardDescription>
+              Enter your shipment's tracking ID to get real-time updates
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Input
+                  placeholder="e.g. ECO-12345"
+                  value={trackingId}
+                  onChange={(e) => setTrackingId(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                />
+              </div>
+              <Button 
+                onClick={handleSearch} 
+                disabled={loading}
+                className="bg-eco-purple hover:bg-eco-purple/90"
+              >
+                {loading ? (
+                  <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                <span className="ml-2">Track</span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {notFound && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Shipment not found</AlertTitle>
+            <AlertDescription>
+              We couldn't find a shipment with the tracking ID you provided. Please check the ID and try again.
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {shipment && (
+          <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Package className="mr-2 h-5 w-5 text-eco-purple" />
-                  Shipment Details
-                </CardTitle>
-                <CardDescription>
-                  Tracking ID: {shipment.tracking_id}
-                </CardDescription>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>{shipment.title}</CardTitle>
+                    <CardDescription>
+                      Tracking ID: {shipment.tracking_id}
+                    </CardDescription>
+                  </div>
+                  <div>
+                    {getStatusBadge(shipment.status)}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-6">
-                  <div className="flex flex-col md:flex-row justify-between gap-4">
-                    <div>
-                      <h3 className="text-lg font-semibold mb-1">{shipment.title}</h3>
-                      <div className="flex items-center mb-4">
-                        <span className="text-sm text-muted-foreground mr-2">Status:</span>
-                        {getStatusBadge(shipment.status)}
-                      </div>
+                <div className="mb-6">
+                  <p className="text-sm text-muted-foreground mb-2">Shipment Progress</p>
+                  <Progress value={calculateProgress()} className="h-2" />
+                  
+                  <div className="flex justify-between mt-2 text-xs">
+                    <div className={`text-center ${shipment.status === 'processing' ? 'text-eco-purple font-medium' : 'text-muted-foreground'}`}>
+                      Processing
                     </div>
-                    <Button 
-                      variant="outline" 
-                      className="self-start"
-                      onClick={handleViewDetails}
-                    >
-                      View Full Details
-                    </Button>
+                    <div className={`text-center ${shipment.status === 'in-transit' ? 'text-eco-purple font-medium' : 'text-muted-foreground'}`}>
+                      In Transit
+                    </div>
+                    <div className={`text-center ${shipment.status === 'delayed' ? 'text-eco-purple font-medium' : 'text-muted-foreground'}`}>
+                      Delayed
+                    </div>
+                    <div className={`text-center ${shipment.status === 'delivered' ? 'text-eco-purple font-medium' : 'text-muted-foreground'}`}>
+                      Delivered
+                    </div>
                   </div>
-                  
-                  {renderShipmentTimeline()}
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-6">
-                    <div className="p-4 bg-gray-50 rounded-md">
-                      <h4 className="text-sm font-medium text-muted-foreground mb-1">Origin</h4>
-                      <p>{shipment.origin}</p>
-                    </div>
-                    <div className="p-4 bg-gray-50 rounded-md flex items-center justify-center">
-                      <ArrowRight className="h-6 w-6 text-eco-purple" />
-                    </div>
-                    <div className="p-4 bg-gray-50 rounded-md">
-                      <h4 className="text-sm font-medium text-muted-foreground mb-1">Destination</h4>
-                      <p>{shipment.destination}</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="flex flex-col p-4 border rounded-lg">
+                    <span className="text-sm text-muted-foreground">From</span>
+                    <div className="flex items-center mt-1">
+                      <MapPin className="h-4 w-4 text-eco-purple mr-1" />
+                      <span className="font-medium">{shipment.origin}</span>
                     </div>
                   </div>
                   
-                  <Separator />
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <h4 className="text-sm font-medium text-muted-foreground flex items-center">
-                        <Clock className="h-4 w-4 mr-1" />
-                        Planned Departure
-                      </h4>
-                      <p>{shipment.planned_departure_date ? 
-                          new Date(shipment.planned_departure_date).toLocaleDateString() : 
-                          'Not scheduled'}</p>
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-medium text-muted-foreground flex items-center">
-                        <Clock className="h-4 w-4 mr-1" />
-                        Estimated Arrival
-                      </h4>
-                      <p>{shipment.estimated_arrival_date ? 
-                          new Date(shipment.estimated_arrival_date).toLocaleDateString() : 
-                          'Not estimated'}</p>
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-medium text-muted-foreground flex items-center">
-                        <Leaf className="h-4 w-4 mr-1" />
-                        Carbon Footprint
-                      </h4>
-                      <p>{shipment.carbon_footprint} kg CO₂</p>
+                  <div className="flex flex-col p-4 border rounded-lg">
+                    <span className="text-sm text-muted-foreground">To</span>
+                    <div className="flex items-center mt-1">
+                      <MapPin className="h-4 w-4 text-eco-purple mr-1" />
+                      <span className="font-medium">{shipment.destination}</span>
                     </div>
                   </div>
                   
-                  {sensorData && (
-                    <>
-                      <Separator />
-                      
-                      <div>
-                        <h3 className="text-md font-semibold mb-3 flex items-center">
-                          <BarChart className="h-5 w-5 mr-2 text-eco-purple" />
-                          Live Sensor Data
-                          <Badge className="ml-2 bg-eco-purple">Updated {new Date(sensorData.timestamp).toLocaleTimeString()}</Badge>
-                        </h3>
-                        
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {sensorData.temperature !== null && (
-                            <div className="p-3 bg-gray-50 rounded-md">
-                              <div className="flex items-center mb-1">
-                                <ThermometerSun className="h-4 w-4 mr-1 text-amber-500" />
-                                <span className="text-sm font-medium">Temperature</span>
-                              </div>
-                              <p className="text-lg font-semibold">{sensorData.temperature}°C</p>
-                            </div>
-                          )}
-                          
-                          {sensorData.humidity !== null && (
-                            <div className="p-3 bg-gray-50 rounded-md">
-                              <div className="flex items-center mb-1">
-                                <Cloud className="h-4 w-4 mr-1 text-blue-500" />
-                                <span className="text-sm font-medium">Humidity</span>
-                              </div>
-                              <p className="text-lg font-semibold">{sensorData.humidity}%</p>
-                            </div>
-                          )}
-                          
-                          {sensorData.latitude !== null && sensorData.longitude !== null && (
-                            <div className="p-3 bg-gray-50 rounded-md col-span-2">
-                              <div className="flex items-center mb-1">
-                                <LocateFixed className="h-4 w-4 mr-1 text-eco-purple" />
-                                <span className="text-sm font-medium">Last Location</span>
-                              </div>
-                              <p className="text-sm">
-                                {sensorData.latitude.toFixed(4)}, {sensorData.longitude.toFixed(4)}
-                              </p>
-                              <Button variant="link" className="p-0 h-auto text-xs text-eco-purple">
-                                View on Map
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </>
+                  <div className="flex flex-col p-4 border rounded-lg">
+                    <span className="text-sm text-muted-foreground">Current Location</span>
+                    <div className="flex items-center mt-1">
+                      <Truck className="h-4 w-4 text-eco-purple mr-1" />
+                      <span className="font-medium">{getLatestLocation()}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                  <div className="flex flex-col p-4 border rounded-lg">
+                    <span className="text-sm text-muted-foreground">Departure Date</span>
+                    <div className="flex items-center mt-1">
+                      <Calendar className="h-4 w-4 text-eco-purple mr-1" />
+                      <span className="font-medium">{formatDate(shipment.planned_departure_date)}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col p-4 border rounded-lg">
+                    <span className="text-sm text-muted-foreground">Estimated Arrival</span>
+                    <div className="flex items-center mt-1">
+                      <Calendar className="h-4 w-4 text-eco-purple mr-1" />
+                      <span className="font-medium">{formatDate(shipment.estimated_arrival_date)}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col p-4 border rounded-lg">
+                    <span className="text-sm text-muted-foreground">Actual Arrival</span>
+                    <div className="flex items-center mt-1">
+                      <Calendar className="h-4 w-4 text-eco-purple mr-1" />
+                      <span className="font-medium">{formatDate(shipment.actual_arrival_date)}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col p-4 border rounded-lg">
+                    <span className="text-sm text-muted-foreground">Carbon Footprint</span>
+                    <div className="flex items-center mt-1">
+                      <Leaf className="h-4 w-4 text-green-500 mr-1" />
+                      <span className="font-medium">{shipment.carbon_footprint} kg CO₂</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center mt-6">
+                  <div className="flex items-center">
+                    <Package className="h-4 w-4 mr-1 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">
+                      {shipment.product_type} • {shipment.quantity} units • {shipment.weight} kg
+                    </span>
+                  </div>
+                  
+                  {shipment.blockchain_tx_hash && (
+                    <Badge variant="outline" className="border-eco-purple text-eco-purple">
+                      Blockchain Verified
+                    </Badge>
                   )}
+                </div>
+                
+                <div className="flex justify-between mt-6">
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate('/customer/carbon')}
+                    className="flex items-center"
+                  >
+                    <Leaf className="mr-2 h-4 w-4 text-green-500" />
+                    View Carbon Report
+                  </Button>
                   
-                  <div className="bg-gray-50 p-4 rounded-md">
-                    <div className="flex items-center mb-2">
-                      <Map className="h-5 w-5 mr-2 text-eco-purple" />
-                      <h3 className="text-md font-semibold">Shipment Route</h3>
-                    </div>
-                    <div className="bg-gray-200 h-40 rounded-md flex items-center justify-center">
-                      <p className="text-muted-foreground text-sm">
-                        Map visualization would be displayed here
-                      </p>
-                    </div>
-                  </div>
+                  {shipment.status === 'delivered' && (
+                    <Button
+                      onClick={() => navigate(`/customer/review/${shipment.id}`)}
+                      className="bg-eco-purple hover:bg-eco-purple/90"
+                    >
+                      <Star className="mr-2 h-4 w-4" />
+                      Leave a Review
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
-          )}
-        </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <Card className="lg:col-span-3">
+                <CardHeader>
+                  <CardTitle>Shipment Tracking</CardTitle>
+                  <Tabs value={tab} onValueChange={setTab}>
+                    <TabsList>
+                      <TabsTrigger value="status">Status Updates</TabsTrigger>
+                      <TabsTrigger value="map">Map View</TabsTrigger>
+                      <TabsTrigger value="sensor">Sensor Data</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </CardHeader>
+                <CardContent>
+                  <TabsContent value="status" className="space-y-0">
+                    {sensorData.length === 0 ? (
+                      <div className="text-center py-12">
+                        <Clock className="h-12 w-12 mx-auto text-muted-foreground" />
+                        <p className="mt-2 text-muted-foreground">No status updates available yet</p>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <div className="absolute top-0 bottom-0 left-7 border-l-2 border-dashed border-muted"></div>
+                        
+                        <div className="space-y-8">
+                          {sensorData.map((data, index) => (
+                            <div key={data.id} className="relative pl-12">
+                              <div className="absolute left-[14px] -translate-x-1/2 h-5 w-5 rounded-full bg-eco-purple flex items-center justify-center">
+                                <div className="h-2 w-2 rounded-full bg-white"></div>
+                              </div>
+                              
+                              <div className="p-4 border rounded-lg">
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <div className="flex items-center">
+                                      {getStatusBadge(data.status)}
+                                      <span className="ml-2 font-medium">{data.location}</span>
+                                    </div>
+                                    <p className="text-sm mt-1 text-muted-foreground">
+                                      {new Date(data.timestamp).toLocaleString()}
+                                    </p>
+                                  </div>
+                                </div>
+                                
+                                {data.notes && (
+                                  <p className="mt-2 text-sm">{data.notes}</p>
+                                )}
+                                
+                                {(data.temperature !== null || data.humidity !== null) && (
+                                  <div className="mt-2 grid grid-cols-2 gap-4">
+                                    {data.temperature !== null && (
+                                      <div className="text-sm">
+                                        <span className="text-muted-foreground">Temperature:</span>{' '}
+                                        <span>{data.temperature}°C</span>
+                                      </div>
+                                    )}
+                                    {data.humidity !== null && (
+                                      <div className="text-sm">
+                                        <span className="text-muted-foreground">Humidity:</span>{' '}
+                                        <span>{data.humidity}%</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="map">
+                    <div className="h-[400px] w-full rounded-md overflow-hidden border">
+                      <MapView
+                        origin={shipment.origin}
+                        destination={shipment.destination}
+                        currentLocation={getMostRecentCoordinates()}
+                      />
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="sensor">
+                    {sensorData.length === 0 ? (
+                      <div className="text-center py-12">
+                        <AlertTriangle className="h-12 w-12 mx-auto text-muted-foreground" />
+                        <p className="mt-2 text-muted-foreground">No sensor data available</p>
+                      </div>
+                    ) : (
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Timestamp</TableHead>
+                              <TableHead>Location</TableHead>
+                              <TableHead>Temperature</TableHead>
+                              <TableHead>Humidity</TableHead>
+                              <TableHead>Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {sensorData.map((data) => (
+                              <TableRow key={data.id}>
+                                <TableCell>
+                                  {new Date(data.timestamp).toLocaleString()}
+                                </TableCell>
+                                <TableCell>{data.location || 'N/A'}</TableCell>
+                                <TableCell>{data.temperature !== null ? `${data.temperature}°C` : 'N/A'}</TableCell>
+                                <TableCell>{data.humidity !== null ? `${data.humidity}%` : 'N/A'}</TableCell>
+                                <TableCell>{getStatusBadge(data.status)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </TabsContent>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );
 };
-
-// Add missing components
-const Check = () => (
-  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-);
-
-const Leaf = () => (
-  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2 22l1-1c3.29-3.6 4-5.5 4-10V6a4 4 0 0 1 4-4h.09a6 6 0 0 1 5.91 6v4a10 10 0 0 1-2.1 6.26c-1.11 1.4-2.59 2.32-4.4 3.74-1.1.86-1.5 1-1.5 1l-1-1.5" />
-    <path d="M2 6l7.9 4.6c1.68.93 3.18 1.29 5.1 1.36" />
-  </svg>
-);
-
-const BarChart = () => (
-  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="20" x2="12" y2="10" />
-    <line x1="18" y1="20" x2="18" y2="4" />
-    <line x1="6" y1="20" x2="6" y2="16" />
-  </svg>
-);
-
-const ThermometerSun = () => (
-  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 9a4 4 0 0 0-2 7.5" />
-    <path d="M12 3v2" />
-    <path d="M6.6 18.4l-1.4 1.4" />
-    <path d="M18 2a2 2 0 0 1 2 2v10.5a4 4 0 1 1-4 0V4c0-1.1.9-2 2-2z" />
-    <path d="M12 3a4.5 4.5 0 0 0 0 9" />
-  </svg>
-);
-
-const Cloud = () => (
-  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 7A5 5 0 0 0 7 7m0 0a3 3 0 1 0-3 5h13a3 3 0 0 0 0-6h-1" />
-  </svg>
-);
 
 export default TrackShipment;
