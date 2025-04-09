@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,9 +14,22 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import MapView from '@/components/dashboard/MapView';
 import { toast } from 'sonner';
-import { MapPin, Truck, Clock, Package, Search, Calendar, ArrowRight, Leaf, FileText, Star, AlertTriangle } from 'lucide-react';
+import { 
+  MapPin, 
+  Truck, 
+  Clock, 
+  Package, 
+  Search, 
+  Calendar, 
+  ArrowRight, 
+  Leaf, 
+  FileText, 
+  Star, 
+  AlertTriangle, 
+  Ship, 
+  Train 
+} from 'lucide-react';
 
-// Define interfaces
 interface Shipment {
   id: string;
   title: string;
@@ -60,7 +72,6 @@ const TrackShipment = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  // For demo purposes, auto-populate a tracking ID
   useEffect(() => {
     fetchUserShipments();
   }, [user?.id]);
@@ -98,7 +109,6 @@ const TrackShipment = () => {
     setSensorData([]);
     
     try {
-      // Fetch the shipment
       const { data: shipmentData, error: shipmentError } = await supabase
         .from('shipments')
         .select('*')
@@ -112,7 +122,6 @@ const TrackShipment = () => {
         return;
       }
       
-      // Check if the shipment belongs to the current user
       if (user && shipmentData.customer_id !== user.id) {
         setNotFound(true);
         toast.error('This shipment does not belong to your account');
@@ -121,7 +130,6 @@ const TrackShipment = () => {
       
       setShipment(shipmentData as Shipment);
       
-      // Fetch sensor data
       const { data: sensorDataResult, error: sensorError } = await supabase
         .from('sensor_data')
         .select('*')
@@ -179,7 +187,6 @@ const TrackShipment = () => {
   const getLatestLocation = () => {
     if (sensorData.length === 0) return 'N/A';
     
-    // Get the latest sensor data with location information
     const latestData = [...sensorData]
       .filter(data => data.location)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
@@ -190,7 +197,6 @@ const TrackShipment = () => {
   const getMostRecentCoordinates = () => {
     if (sensorData.length === 0) return null;
     
-    // Get the latest sensor data with coordinates
     const latestData = [...sensorData]
       .filter(data => data.latitude !== null && data.longitude !== null)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];

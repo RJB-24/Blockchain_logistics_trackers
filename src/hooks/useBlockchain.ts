@@ -14,11 +14,14 @@ interface BlockchainVerifyResult {
 
 interface ShipmentBlockchainData {
   id?: string;
+  shipmentId?: string;
   transportType: string;
   distanceKm?: number;
   carbonFootprint?: number;
   origin?: string;
   destination?: string;
+  rating?: number;
+  userId?: string;
 }
 
 interface BlockchainRecordResult {
@@ -101,11 +104,33 @@ export function useBlockchain() {
     }
   };
 
+  // Add the verifyOnBlockchain method that was missing
+  const verifyOnBlockchain = async (data: ShipmentBlockchainData): Promise<string | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const result = await registerShipment(data);
+      if (!result || !result.success) {
+        throw new Error('Blockchain verification failed');
+      }
+      return result.transactionHash;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Blockchain verification error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     isLoading,
     error,
     verifyBlockchainRecord,
     registerShipment,
-    updateShipmentStatus
+    updateShipmentStatus,
+    verifyOnBlockchain
   };
 }

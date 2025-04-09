@@ -1,33 +1,29 @@
-
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBlockchain } from '@/hooks/useBlockchain';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { CheckCircle2, PackageCheck, AlertTriangle, QrCode, Truck, MapPin, Camera, Package, Calendar, Clock } from 'lucide-react';
+import { Truck, Clock, Package, CheckCircle, X, MapPin, AlertTriangle } from 'lucide-react';
 
-// Define interface for shipment data
+// Define interfaces
 interface Shipment {
   id: string;
   title: string;
-  description: string;
-  status: 'processing' | 'in-transit' | 'delivered' | 'delayed';
   tracking_id: string;
+  status: 'processing' | 'in-transit' | 'delivered' | 'delayed';
   origin: string;
   destination: string;
-  assigned_driver_id: string;
   customer_id: string;
+  carbon_footprint: number;
   planned_departure_date: string;
   estimated_arrival_date: string;
   actual_arrival_date: string | null;
@@ -35,76 +31,75 @@ interface Shipment {
   product_type: string;
   quantity: number;
   weight: number;
-  carbon_footprint: number;
+  blockchain_tx_hash?: string;
+  assigned_driver_id?: string;
+  description?: string;
+  created_at?: string;
 }
 
-// Define interface for update data
 interface DeliveryUpdate {
   id: string;
   shipment_id: string;
+  timestamp: string;
   status: string;
   location: string;
-  notes: string;
+  notes: string | null;
   created_at: string;
+  latitude?: number;
+  longitude?: number;
   temperature?: number;
   humidity?: number;
+  battery_level?: number;
+  shock_detected?: boolean;
   blockchain_tx_hash?: string;
-}
-
-// Interface for blockchain data
-interface DeliveryBlockchainData {
-  shipmentId: string;
-  status: string;
-  location: string;
-  driverId: string;
-  timestamp: string;
 }
 
 const DeliveryUpdates = () => {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'in-transit' | 'delivered'>('all');
   const [updates, setUpdates] = useState<DeliveryUpdate[]>([]);
-  const [updatesLoading, setUpdatesLoading] = useState(false);
-  
-  // Form state for new update
-  const [updateStatus, setUpdateStatus] = useState('in-transit');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [updateLocation, setUpdateLocation] = useState('');
   const [updateNotes, setUpdateNotes] = useState('');
-  const [updateTemperature, setUpdateTemperature] = useState<number | undefined>(undefined);
-  const [updateHumidity, setUpdateHumidity] = useState<number | undefined>(undefined);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [qrScannerActive, setQrScannerActive] = useState(false);
-  
+  const [updateStatus, setUpdateStatus] = useState<'processing' | 'in-transit' | 'delivered' | 'delayed'>('in-transit');
   const { user } = useAuth();
-  const { verifyOnBlockchain } = useBlockchain();
+  const navigate = useNavigate();
+  const { updateShipmentStatus } = useBlockchain();
 
   useEffect(() => {
-    fetchAssignedShipments();
-  }, [filter]);
+    fetchDriverShipments();
+  }, [user?.id]);
 
-  const fetchAssignedShipments = async () => {
+  const fetchDriverShipments = async () => {
     if (!user) return;
     
     try {
       setLoading(true);
       
-      let query = supabase
+      const { data, error } = await supabase
         .from('shipments')
         .select('*')
-        .eq('assigned_driver_id', user.id);
-      
-      if (filter !== 'all') {
-        query = query.eq('status', filter);
-      }
-      
-      const { data, error } = await query.order('estimated_arrival_date', { ascending: true });
+        .eq('assigned_driver_id', user.id)
+        .order('created_at', { ascending: false });
       
       if (error) throw error;
       
-      setShipments(data || []);
+      if (data) {
+        // Type cast the status field to match our Shipment interface
+        const typedShipments: Shipment[] = data.map(shipment => ({
+          ...shipment,
+          status: shipment.status as 'processing' | 'in-transit' | 'delivered' | 'delayed'
+        }));
+        
+        setShipments(typedShipments);
+        
+        // Select the first shipment automatically if available
+        if (typedShipments.length > 0) {
+          setSelectedShipment(typedShipments[0]);
+          await fetchShipmentUpdates(typedShipments[0].id);
+        }
+      }
     } catch (err) {
       console.error('Error fetching shipments:', err);
       toast.error('Failed to load shipments');
@@ -115,8 +110,6 @@ const DeliveryUpdates = () => {
 
   const fetchShipmentUpdates = async (shipmentId: string) => {
     try {
-      setUpdatesLoading(true);
-      
       const { data, error } = await supabase
         .from('sensor_data')
         .select('*')
@@ -125,531 +118,312 @@ const DeliveryUpdates = () => {
       
       if (error) throw error;
       
-      setUpdates(data || []);
+      if (data) {
+        // Convert sensor_data to DeliveryUpdate format
+        const formattedUpdates: DeliveryUpdate[] = data.map(item => ({
+          id: item.id,
+          shipment_id: item.shipment_id,
+          timestamp: item.timestamp,
+          status: item.status || 'unknown',
+          location: item.location || 'Unknown location',
+          notes: item.notes || null,
+          created_at: item.timestamp,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          temperature: item.temperature,
+          humidity: item.humidity,
+          battery_level: item.battery_level,
+          shock_detected: item.shock_detected,
+          blockchain_tx_hash: item.blockchain_tx_hash
+        }));
+        
+        setUpdates(formattedUpdates);
+      }
     } catch (err) {
       console.error('Error fetching shipment updates:', err);
       toast.error('Failed to load shipment updates');
-    } finally {
-      setUpdatesLoading(false);
-    }
-  };
-
-  const handleSelectShipment = (shipment: Shipment) => {
-    setSelectedShipment(shipment);
-    fetchShipmentUpdates(shipment.id);
-    // Reset form fields
-    setUpdateStatus(shipment.status);
-    setUpdateLocation('');
-    setUpdateNotes('');
-    setUpdateTemperature(undefined);
-    setUpdateHumidity(undefined);
-  };
-
-  const handleQrCodeScan = (data: string) => {
-    // In a real app, this would parse the QR code data
-    // For demo purposes, we'll just find a shipment with this tracking ID
-    const shipment = shipments.find(s => s.tracking_id === data);
-    
-    if (shipment) {
-      handleSelectShipment(shipment);
-      setQrScannerActive(false);
-      toast.success(`Found shipment: ${shipment.title}`);
-    } else {
-      toast.error('No matching shipment found');
     }
   };
 
   const handleSubmitUpdate = async () => {
-    if (!selectedShipment || !user) return;
+    if (!selectedShipment) return;
     
-    if (!updateLocation) {
-      toast.error('Please enter the current location');
-      return;
-    }
+    setSubmitting(true);
     
     try {
-      setIsSubmitting(true);
-      
-      // Create the update record
-      const newUpdate = {
-        shipment_id: selectedShipment.id,
-        status: updateStatus,
-        location: updateLocation,
-        notes: updateNotes,
-        temperature: updateTemperature,
-        humidity: updateHumidity
-      };
-      
-      const { data, error } = await supabase
+      // Create a new update
+      const { data: newUpdate, error } = await supabase
         .from('sensor_data')
-        .insert(newUpdate);
+        .insert({
+          shipment_id: selectedShipment.id,
+          timestamp: new Date().toISOString(),
+          status: updateStatus,
+          location: updateLocation,
+          notes: updateNotes,
+        })
+        .select()
+        .single();
       
       if (error) throw error;
       
-      // Update the shipment status if changed
-      if (updateStatus !== selectedShipment.status) {
-        const shipmentUpdate: Partial<Shipment> = {
-          status: updateStatus as Shipment['status']
-        };
-        
-        // If status is delivered, set actual arrival date
-        if (updateStatus === 'delivered') {
-          shipmentUpdate.actual_arrival_date = new Date().toISOString();
-        }
-        
-        const { error: shipmentError } = await supabase
-          .from('shipments')
-          .update(shipmentUpdate)
-          .eq('id', selectedShipment.id);
-        
-        if (shipmentError) throw shipmentError;
-      }
-      
-      // Verify on blockchain
-      const blockchainData: DeliveryBlockchainData = {
-        shipmentId: selectedShipment.id,
-        status: updateStatus,
-        location: updateLocation,
-        driverId: user.id,
-        timestamp: new Date().toISOString()
-      };
-      
+      // Update shipment status on blockchain
       try {
-        const txHash = await verifyOnBlockchain(blockchainData);
-        
-        // Update the record with the blockchain transaction hash
-        if (txHash) {
-          await supabase
-            .from('sensor_data')
-            .update({ blockchain_tx_hash: txHash })
-            .eq('shipment_id', selectedShipment.id)
-            .order('timestamp', { ascending: false })
-            .limit(1);
-        }
+        await updateShipmentStatus(selectedShipment.id, updateStatus);
       } catch (blockchainError) {
-        console.error('Blockchain verification failed, but update was recorded:', blockchainError);
+        console.error('Blockchain update failed, but update was submitted:', blockchainError);
       }
       
-      // Refresh the updates list and selected shipment
-      fetchShipmentUpdates(selectedShipment.id);
-      fetchAssignedShipments();
+      // Optimistically update the UI
+      setUpdates(prevUpdates => [
+        {
+          id: newUpdate.id,
+          shipment_id: selectedShipment.id,
+          timestamp: newUpdate.timestamp,
+          status: updateStatus,
+          location: updateLocation,
+          notes: updateNotes,
+          created_at: newUpdate.timestamp,
+        },
+        ...prevUpdates
+      ]);
       
-      // Reset form
+      // Clear the form
       setUpdateLocation('');
       setUpdateNotes('');
-      setUpdateTemperature(undefined);
-      setUpdateHumidity(undefined);
       
-      toast.success('Delivery update recorded successfully');
-      setUpdateDialogOpen(false);
-      
-    } catch (err) {
+      toast.success('Shipment update submitted');
+    } catch (err: any) {
       console.error('Error submitting update:', err);
-      toast.error('Failed to record delivery update');
+      toast.error('Failed to submit update', {
+        description: err.message
+      });
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'processing':
-        return <Badge className="bg-yellow-500">Processing</Badge>;
-      case 'in-transit':
-        return <Badge className="bg-blue-500">In Transit</Badge>;
-      case 'delivered':
-        return <Badge className="bg-green-500">Delivered</Badge>;
-      case 'delayed':
-        return <Badge className="bg-red-500">Delayed</Badge>;
-      default:
-        return <Badge>{status}</Badge>;
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-eco-dark">Delivery Updates</h1>
-            <p className="text-muted-foreground">Record location and status for your assigned shipments</p>
-          </div>
-          
-          <div className="flex gap-2">
-            <Button 
-              onClick={() => setQrScannerActive(true)} 
-              className="bg-eco-purple hover:bg-eco-purple/90"
-            >
-              <QrCode className="mr-2 h-4 w-4" />
-              Scan QR Code
-            </Button>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-eco-dark">Delivery Updates</h1>
+          <p className="text-muted-foreground">Manage and track your assigned deliveries</p>
         </div>
-
-        {qrScannerActive && (
-          <div className="mb-6">
-            <Card>
+        
+        {loading ? (
+          <Card className="mb-6">
+            <CardContent className="pt-6">
+              <div className="flex justify-center items-center p-4">
+                <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : shipments.length === 0 ? (
+          <Card className="mb-6">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Clock size={20} />
+                <p>No shipments assigned to you yet.</p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card className="lg:col-span-1">
               <CardHeader>
-                <CardTitle>QR Code Scanner</CardTitle>
-                <CardDescription>Scan a shipment's QR code to quickly find it</CardDescription>
+                <CardTitle>Select Shipment</CardTitle>
+                <CardDescription>Choose a shipment to view and update its status</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center">
-                  <div className="border-2 border-dashed border-eco-purple p-8 mb-4 rounded-lg">
-                    <Camera className="h-24 w-24 text-eco-purple" />
-                    <p className="text-center mt-2 text-sm text-muted-foreground">
-                      QR scanner would activate here in production
-                    </p>
+              <CardContent className="p-0">
+                <ScrollArea className="h-[400px]">
+                  <div className="p-4 space-y-2">
+                    {shipments.map((shipment) => (
+                      <Button
+                        key={shipment.id}
+                        variant="outline"
+                        className="w-full justify-start"
+                        onClick={() => {
+                          setSelectedShipment(shipment);
+                          fetchShipmentUpdates(shipment.id);
+                        }}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span>{shipment.title}</span>
+                          {selectedShipment?.id === shipment.id && (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          )}
+                        </div>
+                      </Button>
+                    ))}
                   </div>
-                  
-                  <div className="space-y-4 w-full max-w-md">
-                    <div>
-                      <Label htmlFor="tracking-id">Enter Tracking ID Manually</Label>
-                      <div className="flex gap-2 mt-1">
-                        <Input 
-                          id="tracking-id" 
-                          placeholder="e.g. ECO-12345" 
-                        />
-                        <Button 
-                          onClick={() => {
-                            const input = document.getElementById('tracking-id') as HTMLInputElement;
-                            if (input.value) {
-                              handleQrCodeScan(input.value);
-                            }
-                          }}
-                        >
-                          Find
-                        </Button>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+            
+            <Card className="lg:col-span-2">
+              {selectedShipment ? (
+                <>
+                  <CardHeader>
+                    <CardTitle>{selectedShipment.title}</CardTitle>
+                    <CardDescription>
+                      Tracking ID: {selectedShipment.tracking_id}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm font-medium">Origin</p>
+                        <div className="flex items-center">
+                          <MapPin className="h-4 w-4 text-muted-foreground mr-1" />
+                          <span>{selectedShipment.origin}</span>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <p className="text-sm font-medium">Destination</p>
+                        <div className="flex items-center">
+                          <MapPin className="h-4 w-4 text-muted-foreground mr-1" />
+                          <span>{selectedShipment.destination}</span>
+                        </div>
                       </div>
                     </div>
                     
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setQrScannerActive(false)}
-                      className="w-full"
-                    >
-                      Cancel
-                    </Button>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-sm font-medium">Product Type</p>
+                        <div className="flex items-center">
+                          <Package className="h-4 w-4 text-muted-foreground mr-1" />
+                          <span>{selectedShipment.product_type}</span>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <p className="text-sm font-medium">Quantity</p>
+                        <span>{selectedShipment.quantity}</span>
+                      </div>
+                      
+                      <div>
+                        <p className="text-sm font-medium">Weight</p>
+                        <span>{selectedShipment.weight} kg</span>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <p className="text-sm font-medium">Description</p>
+                      <p>{selectedShipment.description || 'No description provided.'}</p>
+                    </div>
+                    
+                    <Separator />
+                    
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-semibold">Submit Update</h3>
+                      
+                      <div>
+                        <Label htmlFor="update-location">Location</Label>
+                        <Input
+                          id="update-location"
+                          placeholder="e.g. Chicago, IL"
+                          value={updateLocation}
+                          onChange={(e) => setUpdateLocation(e.target.value)}
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="update-notes">Notes</Label>
+                        <Textarea
+                          id="update-notes"
+                          placeholder="e.g. Delayed due to weather conditions"
+                          value={updateNotes}
+                          onChange={(e) => setUpdateNotes(e.target.value)}
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="update-status">Status</Label>
+                        <select
+                          id="update-status"
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                          value={updateStatus}
+                          onChange={(e) => setUpdateStatus(e.target.value as 'processing' | 'in-transit' | 'delivered' | 'delayed')}
+                        >
+                          <option value="in-transit">In Transit</option>
+                          <option value="delivered">Delivered</option>
+                          <option value="delayed">Delayed</option>
+                          <option value="processing">Processing</option>
+                        </select>
+                      </div>
+                      
+                      <Button
+                        onClick={handleSubmitUpdate}
+                        disabled={submitting}
+                        className="w-full bg-eco-purple hover:bg-eco-purple/90"
+                      >
+                        {submitting ? (
+                          <div className="flex items-center">
+                            <div className="animate-spin mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full"></div>
+                            Submitting...
+                          </div>
+                        ) : (
+                          'Submit Update'
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </>
+              ) : (
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Truck className="h-5 w-5" />
+                    <p>Select a shipment to view details and submit updates.</p>
                   </div>
-                </div>
-              </CardContent>
+                </CardContent>
+              )}
             </Card>
           </div>
         )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-1">
+        
+        {selectedShipment && (
+          <Card className="mt-6">
             <CardHeader>
-              <CardTitle>Assigned Shipments</CardTitle>
-              <Tabs value={filter} onValueChange={(value) => setFilter(value as any)}>
-                <TabsList className="w-full">
-                  <TabsTrigger value="all" className="flex-1">All</TabsTrigger>
-                  <TabsTrigger value="in-transit" className="flex-1">In Transit</TabsTrigger>
-                  <TabsTrigger value="delivered" className="flex-1">Delivered</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              <CardTitle>Recent Updates</CardTitle>
+              <CardDescription>Latest updates for this shipment</CardDescription>
             </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <div className="animate-spin h-8 w-8 border-4 border-eco-purple border-t-transparent rounded-full"></div>
-                </div>
-              ) : shipments.length === 0 ? (
-                <div className="text-center py-8">
-                  <Package className="h-12 w-12 mx-auto text-muted-foreground" />
-                  <p className="mt-2 text-muted-foreground">No shipments found</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {shipments.map((shipment) => (
-                    <div 
-                      key={shipment.id} 
-                      className={`p-4 border rounded-lg cursor-pointer hover:border-eco-purple transition-colors ${
-                        selectedShipment?.id === shipment.id ? 'border-eco-purple bg-eco-purple/5' : ''
-                      }`}
-                      onClick={() => handleSelectShipment(shipment)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="font-medium">{shipment.title}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            {shipment.tracking_id}
-                          </p>
-                        </div>
-                        {getStatusBadge(shipment.status)}
-                      </div>
-                      
-                      <div className="mt-2 text-sm flex items-center text-muted-foreground">
-                        <MapPin className="h-3 w-3 mr-1" />
-                        <span className="truncate">{shipment.origin} → {shipment.destination}</span>
-                      </div>
-                      
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        ETA: {new Date(shipment.estimated_arrival_date).toLocaleDateString()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>
-                {selectedShipment ? 
-                  `Shipment: ${selectedShipment.title}` : 
-                  'Delivery Details'
-                }
-              </CardTitle>
-              <CardDescription>
-                {selectedShipment ? 
-                  `Tracking ID: ${selectedShipment.tracking_id}` : 
-                  'Select a shipment to view details'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {!selectedShipment ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <Truck className="h-16 w-16 text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">Select a shipment from the list to view details</p>
-                </div>
-              ) : (
-                <div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div>
-                      <h3 className="text-sm font-medium mb-2">Shipment Details</h3>
-                      <div className="space-y-2">
-                        <div className="flex">
-                          <span className="w-32 text-sm text-muted-foreground">Status:</span>
-                          <span>{getStatusBadge(selectedShipment.status)}</span>
-                        </div>
-                        <div className="flex">
-                          <span className="w-32 text-sm text-muted-foreground">From:</span>
-                          <span>{selectedShipment.origin}</span>
-                        </div>
-                        <div className="flex">
-                          <span className="w-32 text-sm text-muted-foreground">To:</span>
-                          <span>{selectedShipment.destination}</span>
-                        </div>
-                        <div className="flex">
-                          <span className="w-32 text-sm text-muted-foreground">Product:</span>
-                          <span>{selectedShipment.product_type}</span>
-                        </div>
-                        <div className="flex">
-                          <span className="w-32 text-sm text-muted-foreground">Quantity:</span>
-                          <span>{selectedShipment.quantity} units</span>
-                        </div>
-                        <div className="flex">
-                          <span className="w-32 text-sm text-muted-foreground">Weight:</span>
-                          <span>{selectedShipment.weight} kg</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h3 className="text-sm font-medium mb-2">Delivery Schedule</h3>
-                      <div className="space-y-2">
-                        <div className="flex items-center">
-                          <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">Departure Date:</span>
-                          <span className="ml-2">
-                            {new Date(selectedShipment.planned_departure_date).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">Expected Arrival:</span>
-                          <span className="ml-2">
-                            {new Date(selectedShipment.estimated_arrival_date).toLocaleDateString()}
-                          </span>
-                        </div>
-                        {selectedShipment.actual_arrival_date && (
+            <CardContent className="p-0">
+              <ScrollArea className="h-[300px]">
+                {updates.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    <Clock className="h-5 w-5 mx-auto mb-2" />
+                    No updates yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3 p-4">
+                    {updates.map((update) => (
+                      <div key={update.id} className="border rounded-md p-3">
+                        <div className="flex justify-between items-center">
                           <div className="flex items-center">
-                            <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
-                            <span className="text-sm text-muted-foreground">Actual Arrival:</span>
-                            <span className="ml-2">
-                              {new Date(selectedShipment.actual_arrival_date).toLocaleDateString()}
-                            </span>
+                            {update.status === 'delivered' ? (
+                              <CheckCircle className="h-4 w-4 text-green-500 mr-1" />
+                            ) : (
+                              <Truck className="h-4 w-4 text-muted-foreground mr-1" />
+                            )}
+                            <span className="font-medium">{update.location}</span>
                           </div>
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(update.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                        
+                        {update.notes && (
+                          <p className="mt-2 text-sm">{update.notes}</p>
                         )}
                       </div>
-                      
-                      <div className="mt-6">
-                        <Dialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen}>
-                          <DialogTrigger asChild>
-                            <Button 
-                              className="w-full bg-eco-purple hover:bg-eco-purple/90"
-                              disabled={selectedShipment.status === 'delivered'}
-                            >
-                              <PackageCheck className="mr-2 h-4 w-4" />
-                              {selectedShipment.status === 'delivered' ? 'Delivered' : 'Update Status'}
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Update Delivery Status</DialogTitle>
-                              <DialogDescription>
-                                Record the current status and location of this shipment
-                              </DialogDescription>
-                            </DialogHeader>
-                            
-                            <div className="space-y-4 py-4">
-                              <div className="grid grid-cols-1 gap-4">
-                                <div>
-                                  <Label htmlFor="status">Current Status</Label>
-                                  <select
-                                    id="status"
-                                    value={updateStatus}
-                                    onChange={(e) => setUpdateStatus(e.target.value)}
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                  >
-                                    <option value="in-transit">In Transit</option>
-                                    <option value="delivered">Delivered</option>
-                                    <option value="delayed">Delayed</option>
-                                  </select>
-                                </div>
-                                
-                                <div>
-                                  <Label htmlFor="location">Current Location</Label>
-                                  <Input
-                                    id="location"
-                                    placeholder="e.g. Chicago, IL"
-                                    value={updateLocation}
-                                    onChange={(e) => setUpdateLocation(e.target.value)}
-                                  />
-                                </div>
-                                
-                                <div>
-                                  <Label htmlFor="notes">Notes (Optional)</Label>
-                                  <Textarea
-                                    id="notes"
-                                    placeholder="Any additional information about this update"
-                                    value={updateNotes}
-                                    onChange={(e) => setUpdateNotes(e.target.value)}
-                                  />
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <Label htmlFor="temperature">Temperature (°C)</Label>
-                                    <Input
-                                      id="temperature"
-                                      type="number"
-                                      placeholder="e.g. 22"
-                                      value={updateTemperature?.toString() || ''}
-                                      onChange={(e) => setUpdateTemperature(e.target.value ? parseFloat(e.target.value) : undefined)}
-                                    />
-                                  </div>
-                                  
-                                  <div>
-                                    <Label htmlFor="humidity">Humidity (%)</Label>
-                                    <Input
-                                      id="humidity"
-                                      type="number"
-                                      placeholder="e.g. 60"
-                                      value={updateHumidity?.toString() || ''}
-                                      onChange={(e) => setUpdateHumidity(e.target.value ? parseFloat(e.target.value) : undefined)}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <DialogFooter>
-                              <Button variant="outline" onClick={() => setUpdateDialogOpen(false)}>
-                                Cancel
-                              </Button>
-                              <Button
-                                onClick={handleSubmitUpdate}
-                                disabled={isSubmitting || !updateLocation}
-                                className="bg-eco-green hover:bg-eco-green/90"
-                              >
-                                {isSubmitting ? (
-                                  <>
-                                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                                    Submitting...
-                                  </>
-                                ) : (
-                                  <>
-                                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                                    Submit Update
-                                  </>
-                                )}
-                              </Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                  
-                  <Separator className="my-6" />
-                  
-                  <div>
-                    <h3 className="text-sm font-medium mb-4">Delivery Updates</h3>
-                    {updatesLoading ? (
-                      <div className="flex justify-center py-8">
-                        <div className="animate-spin h-8 w-8 border-4 border-eco-purple border-t-transparent rounded-full"></div>
-                      </div>
-                    ) : updates.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Clock className="h-12 w-12 mx-auto text-muted-foreground" />
-                        <p className="mt-2 text-muted-foreground">No updates recorded yet</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {updates.map((update, index) => (
-                          <div key={update.id} className="p-4 border rounded-lg">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <div className="flex items-center">
-                                  {getStatusBadge(update.status)}
-                                  {update.blockchain_tx_hash && (
-                                    <Badge variant="outline" className="ml-2 border-eco-purple text-eco-purple">
-                                      Blockchain Verified
-                                    </Badge>
-                                  )}
-                                </div>
-                                <p className="mt-2 text-sm">
-                                  <span className="text-muted-foreground">Location:</span> {update.location}
-                                </p>
-                              </div>
-                              <p className="text-xs text-muted-foreground whitespace-nowrap">
-                                {formatDate(update.created_at)}
-                              </p>
-                            </div>
-                            
-                            {update.notes && (
-                              <p className="mt-2 text-sm">{update.notes}</p>
-                            )}
-                            
-                            {(update.temperature !== undefined || update.humidity !== undefined) && (
-                              <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-                                {update.temperature !== undefined && (
-                                  <span>Temperature: {update.temperature}°C</span>
-                                )}
-                                {update.humidity !== undefined && (
-                                  <span>Humidity: {update.humidity}%</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                )}
+              </ScrollArea>
             </CardContent>
           </Card>
-        </div>
+        )}
       </div>
     </DashboardLayout>
   );

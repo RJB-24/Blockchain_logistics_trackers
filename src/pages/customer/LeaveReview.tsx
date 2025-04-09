@@ -8,8 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Star, CheckCircle2, Leaf, AlertTriangle, Truck, Package } from 'lucide-react';
+import { Star, CheckCircle2, Leaf, AlertTriangle, Truck, Package, Ship, Train } from 'lucide-react';
+import DashboardLayout from '@/components/layout/DashboardLayout';
 
 // Define the shipment interface
 interface Shipment {
