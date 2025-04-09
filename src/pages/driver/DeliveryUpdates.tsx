@@ -123,14 +123,14 @@ const DeliveryUpdates = () => {
       if (data) {
         // Convert sensor_data to DeliveryUpdate format with default values
         const formattedUpdates: DeliveryUpdate[] = data.map(item => ({
-          id: item.id,
-          shipment_id: item.shipment_id,
-          timestamp: item.timestamp,
+          id: item.id || '',
+          shipment_id: item.shipment_id || '',
+          timestamp: item.timestamp || new Date().toISOString(),
           // Add these required properties with default values if they don't exist
           status: item.status || 'unknown',
           location: item.location || 'Unknown location',
           notes: item.notes || null,
-          created_at: item.timestamp,
+          created_at: item.timestamp || new Date().toISOString(),
           latitude: item.latitude,
           longitude: item.longitude,
           temperature: item.temperature,

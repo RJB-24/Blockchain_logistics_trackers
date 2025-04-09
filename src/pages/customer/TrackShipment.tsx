@@ -146,9 +146,9 @@ const TrackShipment = () => {
         // Convert the DB sensor_data to our SensorData interface format
         // Add default values for missing fields
         const formattedSensorData: SensorData[] = sensorDataResult.map(data => ({
-          id: data.id,
-          shipment_id: data.shipment_id,
-          timestamp: data.timestamp,
+          id: data.id || '',
+          shipment_id: data.shipment_id || '',
+          timestamp: data.timestamp || new Date().toISOString(),
           temperature: data.temperature,
           humidity: data.humidity,
           latitude: data.latitude,
