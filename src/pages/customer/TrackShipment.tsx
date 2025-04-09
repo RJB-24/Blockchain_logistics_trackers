@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -142,6 +143,8 @@ const TrackShipment = () => {
       if (sensorError) throw sensorError;
       
       if (sensorDataResult) {
+        // Convert the DB sensor_data to our SensorData interface format
+        // Add default values for missing fields
         const formattedSensorData: SensorData[] = sensorDataResult.map(data => ({
           id: data.id,
           shipment_id: data.shipment_id,
@@ -150,7 +153,8 @@ const TrackShipment = () => {
           humidity: data.humidity,
           latitude: data.latitude,
           longitude: data.longitude,
-          status: data.status || 'unknown',
+          // Add these required properties with default values if they don't exist
+          status: data.status || shipmentData.status || 'unknown',
           location: data.location || 'Unknown location',
           notes: data.notes || null,
           battery_level: data.battery_level,
