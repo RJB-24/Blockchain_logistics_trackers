@@ -1,432 +1,408 @@
 
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
-import { useBlockchain } from '@/hooks/useBlockchain';
+import React, { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Truck, Clock, Package, CheckCircle, X, MapPin, AlertTriangle } from 'lucide-react';
+import { useBlockchain } from '@/hooks/useBlockchain';
+import { supabase } from '@/integrations/supabase/client';
+import MapView from '@/components/dashboard/MapView';
+import { Truck, Box, PackageCheck, ThermometerSnowflake, Droplets, ZapOff, AlertCircle } from 'lucide-react';
 
-// Define interfaces
+// Define the interfaces for our data structures
 interface Shipment {
   id: string;
   title: string;
-  tracking_id: string;
-  status: 'processing' | 'in-transit' | 'delivered' | 'delayed';
+  description?: string;
   origin: string;
   destination: string;
-  customer_id: string;
-  carbon_footprint: number;
-  planned_departure_date: string;
-  estimated_arrival_date: string;
-  actual_arrival_date: string | null;
-  transport_type: string;
-  product_type: string;
-  quantity: number;
-  weight: number;
-  blockchain_tx_hash?: string;
-  assigned_driver_id?: string;
-  description?: string;
-  created_at?: string;
+  status: 'processing' | 'in-transit' | 'delivered' | 'delayed';
+  transportType: string;
 }
 
-interface DeliveryUpdate {
+interface SensorData {
   id: string;
   shipment_id: string;
   timestamp: string;
-  status: string;
-  location: string;
-  notes: string | null;
-  created_at: string;
-  latitude?: number;
-  longitude?: number;
-  temperature?: number;
-  humidity?: number;
-  battery_level?: number;
-  shock_detected?: boolean;
-  blockchain_tx_hash?: string;
+  temperature: number;
+  humidity: number;
+  shock_detected: boolean;
+  latitude: number;
+  longitude: number;
+  battery_level: number;
+  blockchain_tx_hash: string;
+  status?: string; // Optional field for display purposes
+  location?: string; // Optional field for display purposes
+  notes?: string; // Optional field for display purposes
 }
 
 const DeliveryUpdates = () => {
   const [shipments, setShipments] = useState<Shipment[]>([]);
-  const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
-  const [updates, setUpdates] = useState<DeliveryUpdate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [updateLocation, setUpdateLocation] = useState('');
-  const [updateNotes, setUpdateNotes] = useState('');
-  const [updateStatus, setUpdateStatus] = useState<'processing' | 'in-transit' | 'delivered' | 'delayed'>('in-transit');
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const { updateShipmentStatus } = useBlockchain();
+  const [selectedShipment, setSelectedShipment] = useState<string | null>(null);
+  const [shipmentDetails, setShipmentDetails] = useState<Shipment | null>(null);
+  const [sensorData, setSensorData] = useState<SensorData[]>([]);
+  const [latestSensorData, setLatestSensorData] = useState<SensorData | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const { updateShipmentStatus, verifyBlockchainRecord } = useBlockchain();
 
+  // Simulate current location for the map
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  
+  // Fetch shipments assigned to the driver
   useEffect(() => {
-    fetchDriverShipments();
-  }, [user?.id]);
-
-  const fetchDriverShipments = async () => {
-    if (!user) return;
-    
-    try {
+    const fetchShipments = async () => {
       setLoading(true);
-      
-      const { data, error } = await supabase
-        .from('shipments')
-        .select('*')
-        .eq('assigned_driver_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      if (data) {
-        // Type cast the status field to match our Shipment interface
-        const typedShipments: Shipment[] = data.map(shipment => ({
-          ...shipment,
-          status: shipment.status as 'processing' | 'in-transit' | 'delivered' | 'delayed'
+      try {
+        // In a real app, this would filter by assigned_driver_id
+        const { data, error } = await supabase
+          .from('shipments')
+          .select('*')
+          .order('created_at', { ascending: false });
+          
+        if (error) throw error;
+        
+        const formattedShipments = data.map((shipment) => ({
+          id: shipment.id,
+          title: shipment.title,
+          description: shipment.description,
+          origin: shipment.origin,
+          destination: shipment.destination,
+          status: shipment.status,
+          transportType: shipment.transport_type
         }));
         
-        setShipments(typedShipments);
-        
-        // Select the first shipment automatically if available
-        if (typedShipments.length > 0) {
-          setSelectedShipment(typedShipments[0]);
-          await fetchShipmentUpdates(typedShipments[0].id);
-        }
+        setShipments(formattedShipments);
+      } catch (error) {
+        console.error('Error fetching shipments:', error);
+        toast.error('Failed to load shipments');
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('Error fetching shipments:', err);
-      toast.error('Failed to load shipments');
+    };
+
+    fetchShipments();
+  }, []);
+
+  // When a shipment is selected, fetch its details and sensor data
+  useEffect(() => {
+    if (!selectedShipment) return;
+
+    const fetchShipmentDetails = async () => {
+      setLoading(true);
+      try {
+        // Fetch shipment details
+        const { data: shipmentData, error: shipmentError } = await supabase
+          .from('shipments')
+          .select('*')
+          .eq('id', selectedShipment)
+          .single();
+          
+        if (shipmentError) throw shipmentError;
+        
+        setShipmentDetails({
+          id: shipmentData.id,
+          title: shipmentData.title,
+          description: shipmentData.description,
+          origin: shipmentData.origin,
+          destination: shipmentData.destination,
+          status: shipmentData.status,
+          transportType: shipmentData.transport_type
+        });
+        
+        // Fetch sensor data
+        const { data: sensorDataResult, error: sensorError } = await supabase
+          .from('sensor_data')
+          .select('*')
+          .eq('shipment_id', selectedShipment)
+          .order('timestamp', { ascending: false });
+          
+        if (sensorError) throw sensorError;
+        
+        // Add default/mock values for display purposes
+        const enrichedSensorData = sensorDataResult.map((data: any) => ({
+          ...data,
+          status: data.status || 'normal',
+          location: data.location || `${data.latitude.toFixed(4)}, ${data.longitude.toFixed(4)}`,
+          notes: data.notes || 'No notes available'
+        }));
+        
+        setSensorData(enrichedSensorData);
+        
+        if (enrichedSensorData.length > 0) {
+          setLatestSensorData(enrichedSensorData[0]);
+          setCurrentLocation({
+            lat: enrichedSensorData[0].latitude,
+            lng: enrichedSensorData[0].longitude
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching shipment details:', error);
+        toast.error('Failed to load shipment details');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchShipmentDetails();
+  }, [selectedShipment]);
+
+  // Handle status update
+  const handleStatusUpdate = async () => {
+    if (!selectedShipment || !updateStatus) {
+      toast.error('Please select a shipment and status');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      // Update status in database
+      const { error: updateError } = await supabase
+        .from('shipments')
+        .update({ status: updateStatus })
+        .eq('id', selectedShipment);
+        
+      if (updateError) throw updateError;
+      
+      // Record update on blockchain
+      const result = await updateShipmentStatus(selectedShipment, updateStatus);
+      
+      if (!result || !result.success) {
+        throw new Error('Blockchain verification failed');
+      }
+      
+      // Add sensor data with notes
+      if (currentLocation) {
+        const { error: sensorError } = await supabase
+          .from('sensor_data')
+          .insert({
+            shipment_id: selectedShipment,
+            temperature: Math.random() * 5 + 2, // 2-7°C
+            humidity: Math.random() * 20 + 50, // 50-70%
+            shock_detected: false,
+            latitude: currentLocation.lat,
+            longitude: currentLocation.lng,
+            battery_level: Math.random() * 30 + 70, // 70-100%
+            notes: notes
+          });
+          
+        if (sensorError) throw sensorError;
+      }
+      
+      toast.success(`Shipment status updated to ${updateStatus}`);
+      
+      // Refresh shipment details
+      if (shipmentDetails) {
+        setShipmentDetails({
+          ...shipmentDetails,
+          status: updateStatus as any
+        });
+      }
+      
+      setNotes('');
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast.error('Failed to update status');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchShipmentUpdates = async (shipmentId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('sensor_data')
-        .select('*')
-        .eq('shipment_id', shipmentId)
-        .order('timestamp', { ascending: false });
-      
-      if (error) throw error;
-      
-      if (data) {
-        // Convert sensor_data to DeliveryUpdate format with default values
-        const formattedUpdates: DeliveryUpdate[] = data.map(item => ({
-          id: item.id || '',
-          shipment_id: item.shipment_id || '',
-          timestamp: item.timestamp || new Date().toISOString(),
-          // Add these required properties with default values if they don't exist
-          status: item.status || 'unknown',
-          location: item.location || 'Unknown location',
-          notes: item.notes || null,
-          created_at: item.timestamp || new Date().toISOString(),
-          latitude: item.latitude,
-          longitude: item.longitude,
-          temperature: item.temperature,
-          humidity: item.humidity,
-          battery_level: item.battery_level,
-          shock_detected: item.shock_detected || false,
-          blockchain_tx_hash: item.blockchain_tx_hash
-        }));
-        
-        setUpdates(formattedUpdates);
-      }
-    } catch (err) {
-      console.error('Error fetching shipment updates:', err);
-      toast.error('Failed to load shipment updates');
-    }
-  };
-
-  const handleSubmitUpdate = async () => {
-    if (!selectedShipment) return;
+  // Simulate location update (in a real app, this would use GPS)
+  const updateLocation = () => {
+    if (!currentLocation) return;
     
-    setSubmitting(true);
+    // Simulate small movement
+    const newLocation = {
+      lat: currentLocation.lat + (Math.random() - 0.5) * 0.01,
+      lng: currentLocation.lng + (Math.random() - 0.5) * 0.01
+    };
     
-    try {
-      // Create a new update
-      const { data: newUpdate, error } = await supabase
-        .from('sensor_data')
-        .insert({
-          shipment_id: selectedShipment.id,
-          timestamp: new Date().toISOString(),
-          status: updateStatus,
-          location: updateLocation,
-          notes: updateNotes,
-        })
-        .select()
-        .single();
-      
-      if (error) throw error;
-      
-      // Update shipment status on blockchain
-      try {
-        await updateShipmentStatus(selectedShipment.id, updateStatus);
-      } catch (blockchainError) {
-        console.error('Blockchain update failed, but update was submitted:', blockchainError);
-      }
-      
-      // Optimistically update the UI
-      setUpdates(prevUpdates => [
-        {
-          id: newUpdate.id,
-          shipment_id: selectedShipment.id,
-          timestamp: newUpdate.timestamp,
-          status: updateStatus,
-          location: updateLocation,
-          notes: updateNotes,
-          created_at: newUpdate.timestamp,
-        },
-        ...prevUpdates
-      ]);
-      
-      // Clear the form
-      setUpdateLocation('');
-      setUpdateNotes('');
-      
-      toast.success('Shipment update submitted');
-    } catch (err: any) {
-      console.error('Error submitting update:', err);
-      toast.error('Failed to submit update', {
-        description: err.message
-      });
-    } finally {
-      setSubmitting(false);
-    }
+    setCurrentLocation(newLocation);
+    
+    toast.info('Location updated');
   };
 
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-eco-dark">Delivery Updates</h1>
-          <p className="text-muted-foreground">Manage and track your assigned deliveries</p>
-        </div>
+        <h1 className="text-2xl font-bold text-eco-dark mb-6">Delivery Updates</h1>
         
-        {loading ? (
-          <Card className="mb-6">
-            <CardContent className="pt-6">
-              <div className="flex justify-center items-center p-4">
-                <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : shipments.length === 0 ? (
-          <Card className="mb-6">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Clock size={20} />
-                <p>No shipments assigned to you yet.</p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle>Select Shipment</CardTitle>
-                <CardDescription>Choose a shipment to view and update its status</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ScrollArea className="h-[400px]">
-                  <div className="p-4 space-y-2">
-                    {shipments.map((shipment) => (
-                      <Button
-                        key={shipment.id}
-                        variant="outline"
-                        className="w-full justify-start"
-                        onClick={() => {
-                          setSelectedShipment(shipment);
-                          fetchShipmentUpdates(shipment.id);
-                        }}
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <span>{shipment.title}</span>
-                          {selectedShipment?.id === shipment.id && (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          )}
-                        </div>
-                      </Button>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-            
-            <Card className="lg:col-span-2">
-              {selectedShipment ? (
-                <>
-                  <CardHeader>
-                    <CardTitle>{selectedShipment.title}</CardTitle>
-                    <CardDescription>
-                      Tracking ID: {selectedShipment.tracking_id}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm font-medium">Origin</p>
-                        <div className="flex items-center">
-                          <MapPin className="h-4 w-4 text-muted-foreground mr-1" />
-                          <span>{selectedShipment.origin}</span>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <p className="text-sm font-medium">Destination</p>
-                        <div className="flex items-center">
-                          <MapPin className="h-4 w-4 text-muted-foreground mr-1" />
-                          <span>{selectedShipment.destination}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <p className="text-sm font-medium">Product Type</p>
-                        <div className="flex items-center">
-                          <Package className="h-4 w-4 text-muted-foreground mr-1" />
-                          <span>{selectedShipment.product_type}</span>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <p className="text-sm font-medium">Quantity</p>
-                        <span>{selectedShipment.quantity}</span>
-                      </div>
-                      
-                      <div>
-                        <p className="text-sm font-medium">Weight</p>
-                        <span>{selectedShipment.weight} kg</span>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <p className="text-sm font-medium">Description</p>
-                      <p>{selectedShipment.description || 'No description provided.'}</p>
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="space-y-2">
-                      <h3 className="text-lg font-semibold">Submit Update</h3>
-                      
-                      <div>
-                        <Label htmlFor="update-location">Location</Label>
-                        <Input
-                          id="update-location"
-                          placeholder="e.g. Chicago, IL"
-                          value={updateLocation}
-                          onChange={(e) => setUpdateLocation(e.target.value)}
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="update-notes">Notes</Label>
-                        <Textarea
-                          id="update-notes"
-                          placeholder="e.g. Delayed due to weather conditions"
-                          value={updateNotes}
-                          onChange={(e) => setUpdateNotes(e.target.value)}
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="update-status">Status</Label>
-                        <select
-                          id="update-status"
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                          value={updateStatus}
-                          onChange={(e) => setUpdateStatus(e.target.value as 'processing' | 'in-transit' | 'delivered' | 'delayed')}
-                        >
-                          <option value="in-transit">In Transit</option>
-                          <option value="delivered">Delivered</option>
-                          <option value="delayed">Delayed</option>
-                          <option value="processing">Processing</option>
-                        </select>
-                      </div>
-                      
-                      <Button
-                        onClick={handleSubmitUpdate}
-                        disabled={submitting}
-                        className="w-full bg-eco-purple hover:bg-eco-purple/90"
-                      >
-                        {submitting ? (
-                          <div className="flex items-center">
-                            <div className="animate-spin mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full"></div>
-                            Submitting...
-                          </div>
-                        ) : (
-                          'Submit Update'
-                        )}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </>
-              ) : (
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Truck className="h-5 w-5" />
-                    <p>Select a shipment to view details and submit updates.</p>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          </div>
-        )}
-        
-        {selectedShipment && (
-          <Card className="mt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Shipment selection */}
+          <Card className="lg:col-span-1">
             <CardHeader>
-              <CardTitle>Recent Updates</CardTitle>
-              <CardDescription>Latest updates for this shipment</CardDescription>
+              <CardTitle>Active Shipments</CardTitle>
+              <CardDescription>Select a shipment to update</CardDescription>
             </CardHeader>
-            <CardContent className="p-0">
-              <ScrollArea className="h-[300px]">
-                {updates.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground">
-                    <Clock className="h-5 w-5 mx-auto mb-2" />
-                    No updates yet.
+            <CardContent>
+              <Select value={selectedShipment || ''} onValueChange={setSelectedShipment}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a shipment" />
+                </SelectTrigger>
+                <SelectContent>
+                  {shipments.map(shipment => (
+                    <SelectItem key={shipment.id} value={shipment.id}>
+                      {shipment.title} - {shipment.origin} to {shipment.destination}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              {shipmentDetails && (
+                <div className="mt-4 space-y-2">
+                  <h3 className="font-medium">{shipmentDetails.title}</h3>
+                  <p className="text-sm text-muted-foreground">{shipmentDetails.description}</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <Badge className="bg-eco-purple">{shipmentDetails.transportType}</Badge>
+                    <Badge className={
+                      shipmentDetails.status === 'processing' ? 'bg-blue-500' :
+                      shipmentDetails.status === 'in-transit' ? 'bg-yellow-500' :
+                      shipmentDetails.status === 'delivered' ? 'bg-green-500' :
+                      'bg-red-500'
+                    }>
+                      {shipmentDetails.status}
+                    </Badge>
                   </div>
-                ) : (
-                  <div className="space-y-3 p-4">
-                    {updates.map((update) => (
-                      <div key={update.id} className="border rounded-md p-3">
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center">
-                            {update.status === 'delivered' ? (
-                              <CheckCircle className="h-4 w-4 text-green-500 mr-1" />
-                            ) : (
-                              <Truck className="h-4 w-4 text-muted-foreground mr-1" />
-                            )}
-                            <span className="font-medium">{update.location}</span>
-                          </div>
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(update.timestamp).toLocaleString()}
-                          </span>
-                        </div>
-                        
-                        {update.notes && (
-                          <p className="mt-2 text-sm">{update.notes}</p>
-                        )}
-                      </div>
-                    ))}
+                  <div className="text-sm mt-2">
+                    <div className="flex items-center gap-1">
+                      <Box className="h-4 w-4" /> From: {shipmentDetails.origin}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <PackageCheck className="h-4 w-4" /> To: {shipmentDetails.destination}
+                    </div>
                   </div>
-                )}
-              </ScrollArea>
+                </div>
+              )}
             </CardContent>
           </Card>
-        )}
+          
+          {/* Map view */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Shipment Location</CardTitle>
+              <CardDescription>Real-time tracking and sensor data</CardDescription>
+            </CardHeader>
+            <CardContent className="h-[400px]">
+              {selectedShipment && shipmentDetails && (
+                <MapView
+                  originLocation={shipmentDetails.origin}
+                  destinationLocation={shipmentDetails.destination}
+                  currentLocation={currentLocation}
+                  transportType={shipmentDetails.transportType}
+                  sensorData={latestSensorData ? {
+                    temperature: latestSensorData.temperature,
+                    humidity: latestSensorData.humidity,
+                    shockDetected: latestSensorData.shock_detected
+                  } : undefined}
+                />
+              )}
+            </CardContent>
+          </Card>
+          
+          {/* Update status */}
+          <Card className="lg:col-span-1">
+            <CardHeader>
+              <CardTitle>Update Status</CardTitle>
+              <CardDescription>Change shipment status and add notes</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <Select value={updateStatus} onValueChange={setUpdateStatus}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select new status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="processing">Processing</SelectItem>
+                      <SelectItem value="in-transit">In Transit</SelectItem>
+                      <SelectItem value="delivered">Delivered</SelectItem>
+                      <SelectItem value="delayed">Delayed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Textarea
+                    placeholder="Add delivery notes or issues..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                
+                <Button 
+                  className="w-full bg-eco-purple hover:bg-eco-purple/90" 
+                  onClick={handleStatusUpdate}
+                  disabled={loading || !selectedShipment || !updateStatus}
+                >
+                  Update Status
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={updateLocation}
+                  disabled={!currentLocation}
+                >
+                  Refresh Location
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Sensor Data */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Sensor Readings</CardTitle>
+              <CardDescription>Latest data from IoT sensors</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {latestSensorData ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-100 p-4 rounded-md flex items-center">
+                    <ThermometerSnowflake className="h-8 w-8 text-blue-500 mr-2" />
+                    <div>
+                      <div className="text-sm text-muted-foreground">Temperature</div>
+                      <div className="text-lg font-medium">{latestSensorData.temperature.toFixed(1)}°C</div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gray-100 p-4 rounded-md flex items-center">
+                    <Droplets className="h-8 w-8 text-blue-400 mr-2" />
+                    <div>
+                      <div className="text-sm text-muted-foreground">Humidity</div>
+                      <div className="text-lg font-medium">{latestSensorData.humidity.toFixed(1)}%</div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gray-100 p-4 rounded-md flex items-center">
+                    {latestSensorData.shock_detected ? (
+                      <AlertCircle className="h-8 w-8 text-red-500 mr-2" />
+                    ) : (
+                      <ZapOff className="h-8 w-8 text-gray-500 mr-2" />
+                    )}
+                    <div>
+                      <div className="text-sm text-muted-foreground">Shock Detection</div>
+                      <div className="text-lg font-medium">
+                        {latestSensorData.shock_detected ? 'Detected' : 'None'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6 text-muted-foreground">
+                  No sensor data available for this shipment
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </DashboardLayout>
   );

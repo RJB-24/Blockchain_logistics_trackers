@@ -186,6 +186,82 @@ export const blockchainService = {
 
     const factor = emissionFactors[transportType.toLowerCase()] || emissionFactors.truck;
     return Math.round(factor * distanceKm * 100) / 100; // kg CO2
+  },
+  
+  // Execute smart contract for customs clearance
+  executeCustomsClearance: async (shipmentId: string, countryCode: string, documents: string[]): Promise<Transaction> => {
+    const txHash = generateTransactionHash();
+    const tx: Transaction = {
+      hash: txHash,
+      blockNumber: Math.floor(Math.random() * 1000000) + 15000000,
+      from: MOCK_WALLET_ADDRESS,
+      to: '0x8Ba1f109551bD432803012645Ac136ddd64DBA72', // Mock contract address
+      data: JSON.stringify({ shipmentId, countryCode, documents, operation: 'customs-clearance' }),
+      timestamp: Date.now(),
+      status: 'confirmed'
+    };
+
+    console.log(`Executing customs clearance for shipment ${shipmentId}`);
+    console.log('Transaction:', tx);
+
+    return tx;
+  },
+  
+  // Execute smart contract for payment release
+  executePaymentRelease: async (shipmentId: string, amount: number, currency: string): Promise<Transaction> => {
+    const txHash = generateTransactionHash();
+    const tx: Transaction = {
+      hash: txHash,
+      blockNumber: Math.floor(Math.random() * 1000000) + 15000000,
+      from: MOCK_WALLET_ADDRESS,
+      to: '0x8Ba1f109551bD432803012645Ac136ddd64DBA72', // Mock contract address
+      data: JSON.stringify({ shipmentId, amount, currency, operation: 'payment-release' }),
+      timestamp: Date.now(),
+      status: 'confirmed'
+    };
+
+    console.log(`Releasing payment for shipment ${shipmentId}: ${amount} ${currency}`);
+    console.log('Transaction:', tx);
+
+    return tx;
+  },
+  
+  // Issue carbon credits
+  issueCarbonCredits: async (shipmentId: string, carbonSaved: number): Promise<Transaction> => {
+    const txHash = generateTransactionHash();
+    const tx: Transaction = {
+      hash: txHash,
+      blockNumber: Math.floor(Math.random() * 1000000) + 15000000,
+      from: MOCK_WALLET_ADDRESS,
+      to: '0x8Ba1f109551bD432803012645Ac136ddd64DBA72', // Mock contract address
+      data: JSON.stringify({ shipmentId, carbonSaved, operation: 'carbon-credits-issuance' }),
+      timestamp: Date.now(),
+      status: 'confirmed'
+    };
+
+    console.log(`Issuing carbon credits for shipment ${shipmentId}: ${carbonSaved} kg CO2 saved`);
+    console.log('Transaction:', tx);
+
+    return tx;
+  },
+  
+  // Create smart contract for dispute resolution
+  createDisputeResolution: async (shipmentId: string, issue: string, partyA: string, partyB: string): Promise<Transaction> => {
+    const txHash = generateTransactionHash();
+    const tx: Transaction = {
+      hash: txHash,
+      blockNumber: Math.floor(Math.random() * 1000000) + 15000000,
+      from: MOCK_WALLET_ADDRESS,
+      to: '0x8Ba1f109551bD432803012645Ac136ddd64DBA72', // Mock contract address
+      data: JSON.stringify({ shipmentId, issue, partyA, partyB, operation: 'dispute-resolution' }),
+      timestamp: Date.now(),
+      status: 'confirmed'
+    };
+
+    console.log(`Creating dispute resolution contract for shipment ${shipmentId}`);
+    console.log('Transaction:', tx);
+
+    return tx;
   }
 };
 

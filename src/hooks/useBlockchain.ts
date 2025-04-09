@@ -199,6 +199,175 @@ export function useBlockchain() {
       setIsLoading(false);
     }
   };
+  
+  // Generate multi-modal route optimization
+  const generateMultiModalRoute = async (
+    origin: string, 
+    destination: string, 
+    transportPreferences: string[],
+    optimizationCriteria: 'time' | 'cost' | 'carbon' = 'carbon'
+  ): Promise<any | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('sustainability-ai', {
+        body: { 
+          action: 'optimize_route', 
+          routeParams: {
+            origin,
+            destination,
+            transportType: transportPreferences.includes('multi-modal') ? 'multi-modal' : transportPreferences[0],
+            optimizationCriteria
+          }
+        }
+      });
+      
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Route optimization error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Generate AI sustainability recommendations
+  const getSustainabilityRecommendations = async (
+    shipmentId: string
+  ): Promise<any | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('sustainability-ai', {
+        body: { 
+          action: 'generate_suggestions', 
+          shipmentId
+        }
+      });
+      
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Sustainability recommendations error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Process payment automatically via smart contract
+  const processPayment = async (
+    shipmentId: string, 
+    amount: number, 
+    currency: string = 'USD'
+  ): Promise<SmartContractResult | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+        body: { 
+          operation: 'execute-contract', 
+          contractType: 'payment', 
+          payload: {
+            shipmentId,
+            amount,
+            currency
+          }
+        }
+      });
+      
+      if (error) throw error;
+      return data as SmartContractResult;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Payment processing error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Automated customs clearance
+  const processClearance = async (
+    shipmentId: string, 
+    countryCode: string,
+    documentHashes: string[]
+  ): Promise<SmartContractResult | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+        body: { 
+          operation: 'execute-contract', 
+          contractType: 'customs', 
+          payload: {
+            shipmentId,
+            countryCode,
+            documentHashes
+          }
+        }
+      });
+      
+      if (error) throw error;
+      return data as SmartContractResult;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Customs clearance error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Confirm delivery and trigger relevant smart contracts
+  const confirmDelivery = async (
+    shipmentId: string,
+    recipientSignature: string,
+    deliveryNotes: string
+  ): Promise<SmartContractResult | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // First update the shipment status to delivered
+      await updateShipmentStatus(shipmentId, 'delivered');
+      
+      // Then execute the delivery confirmation smart contract
+      const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+        body: { 
+          operation: 'execute-contract', 
+          contractType: 'delivery', 
+          payload: {
+            shipmentId,
+            recipientSignature,
+            deliveryNotes,
+            deliveryTime: new Date().toISOString()
+          }
+        }
+      });
+      
+      if (error) throw error;
+      return data as SmartContractResult;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Delivery confirmation error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return {
     isLoading,
@@ -209,6 +378,11 @@ export function useBlockchain() {
     verifyOnBlockchain,
     executeSmartContract,
     getCarbonCredits,
-    resolveDispute
+    resolveDispute,
+    generateMultiModalRoute,
+    getSustainabilityRecommendations,
+    processPayment,
+    processClearance,
+    confirmDelivery
   };
 }
