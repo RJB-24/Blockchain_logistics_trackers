@@ -1,8 +1,9 @@
+
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
-import { toast } from 'sonner';
+import { toast as sonnerToast } from 'sonner';
 
 export type UserRole = 'manager' | 'driver' | 'customer';
 
@@ -36,7 +37,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { toast: uiToast } = useToast();
+  const { toast } = useToast();
 
   const fetchUserProfile = async (userId: string) => {
     try {
@@ -127,8 +128,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       if (error) throw error;
       
-      toast({
-        title: 'Welcome back!',
+      // Use Sonner toast instead of the shadcn/ui toast
+      sonnerToast.success('Welcome back!', {
         description: 'You have successfully signed in.',
       });
       
@@ -136,11 +137,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to sign in';
       setError(errorMessage);
-      toast({
-        title: 'Sign in failed',
+      
+      // Use Sonner toast for the error message
+      sonnerToast.error('Sign in failed', {
         description: errorMessage,
-        variant: 'destructive',
       });
+      
       throw err;
     } finally {
       setLoading(false);
@@ -154,18 +156,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       
-      toast({
-        title: 'Signed out',
+      // Use Sonner toast for the success message
+      sonnerToast.success('Signed out', {
         description: 'You have been successfully signed out.',
       });
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to sign out';
       setError(errorMessage);
-      toast({
-        title: 'Sign out failed',
+      
+      // Use Sonner toast for the error message
+      sonnerToast.error('Sign out failed', {
         description: errorMessage,
-        variant: 'destructive',
       });
+      
       throw err;
     } finally {
       setLoading(false);
@@ -188,8 +191,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       if (error) throw error;
       
-      toast({
-        title: 'Account created',
+      // Use Sonner toast for the success message
+      sonnerToast.success('Account created', {
         description: 'Your account has been successfully created.',
       });
       
@@ -197,11 +200,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to create account';
       setError(errorMessage);
-      toast({
-        title: 'Sign up failed',
+      
+      // Use Sonner toast for the error message
+      sonnerToast.error('Sign up failed', {
         description: errorMessage,
-        variant: 'destructive',
       });
+      
       throw err;
     } finally {
       setLoading(false);
