@@ -60,6 +60,9 @@ interface SensorData {
   status: string;
   location: string;
   notes: string | null;
+  battery_level: number | null;
+  shock_detected: boolean;
+  blockchain_tx_hash?: string;
 }
 
 const TrackShipment = () => {
@@ -138,7 +141,25 @@ const TrackShipment = () => {
       
       if (sensorError) throw sensorError;
       
-      setSensorData(sensorDataResult || []);
+      if (sensorDataResult) {
+        const formattedSensorData: SensorData[] = sensorDataResult.map(data => ({
+          id: data.id,
+          shipment_id: data.shipment_id,
+          timestamp: data.timestamp,
+          temperature: data.temperature,
+          humidity: data.humidity,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          status: data.status || 'unknown',
+          location: data.location || 'Unknown location',
+          notes: data.notes || null,
+          battery_level: data.battery_level,
+          shock_detected: data.shock_detected,
+          blockchain_tx_hash: data.blockchain_tx_hash
+        }));
+        
+        setSensorData(formattedSensorData);
+      }
       
     } catch (err) {
       console.error('Error tracking shipment:', err);
@@ -478,8 +499,8 @@ const TrackShipment = () => {
                   <TabsContent value="map">
                     <div className="h-[400px] w-full rounded-md overflow-hidden border">
                       <MapView
-                        origin={shipment.origin}
-                        destination={shipment.destination}
+                        originLocation={shipment.origin}
+                        destinationLocation={shipment.destination}
                         currentLocation={getMostRecentCoordinates()}
                       />
                     </div>

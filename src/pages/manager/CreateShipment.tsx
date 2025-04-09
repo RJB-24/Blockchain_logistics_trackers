@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,7 +36,7 @@ interface ShipmentFormData {
 interface User {
   id: string;
   full_name: string;
-  role: string;
+  role?: string;
 }
 
 const CreateShipment = () => {
@@ -66,8 +66,7 @@ const CreateShipment = () => {
   const [departureDate, setDepartureDate] = useState<Date | undefined>();
   const [arrivalDate, setArrivalDate] = useState<Date | undefined>();
 
-  // Fetch customers and drivers on component mount
-  useState(() => {
+  useEffect(() => {
     fetchUsers();
   }, []);
 
@@ -76,7 +75,6 @@ const CreateShipment = () => {
     setError(null);
     
     try {
-      // Fetch customers
       const { data: customerData, error: customerError } = await supabase
         .from('profiles')
         .select('id, full_name')
@@ -84,9 +82,13 @@ const CreateShipment = () => {
       
       if (customerError) throw customerError;
       
-      setCustomers(customerData || []);
+      const typedCustomers: User[] = (customerData || []).map(customer => ({
+        ...customer,
+        role: 'customer'
+      }));
       
-      // Fetch drivers
+      setCustomers(typedCustomers);
+      
       const { data: driverData, error: driverError } = await supabase
         .from('profiles')
         .select('id, full_name')
@@ -94,7 +96,12 @@ const CreateShipment = () => {
       
       if (driverError) throw driverError;
       
-      setDrivers(driverData || []);
+      const typedDrivers: User[] = (driverData || []).map(driver => ({
+        ...driver,
+        role: 'driver'
+      }));
+      
+      setDrivers(typedDrivers);
       
     } catch (err: any) {
       console.error('Error fetching users:', err);
@@ -127,13 +134,10 @@ const CreateShipment = () => {
   };
 
   const calculateDistance = (origin: string, destination: string): number => {
-    // This is a placeholder for a real distance calculation service
-    // In a real application, you would use a map API to calculate the distance
-    return Math.floor(Math.random() * 1000) + 500; // Random distance between 500 and 1500 km
+    return Math.floor(Math.random() * 1000) + 500;
   };
 
   const calculateCarbonFootprint = (transportType: string, distanceKm: number): number => {
-    // Carbon emission factors (kg CO2/km)
     const emissionFactors: Record<string, number> = {
       truck: 0.15,
       train: 0.08,
@@ -142,7 +146,7 @@ const CreateShipment = () => {
     };
     
     const factor = emissionFactors[transportType] || emissionFactors.truck;
-    return Math.round(factor * distanceKm * 100) / 100; // Rounded to 2 decimal places
+    return Math.round(factor * distanceKm * 100) / 100;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -158,14 +162,11 @@ const CreateShipment = () => {
     try {
       setSubmitting(true);
       
-      // Generate tracking ID
       const trackingId = `ECO-${nanoid(6).toUpperCase()}`;
       
-      // Calculate carbon footprint based on transport type and estimated distance
       const distance = calculateDistance(formData.origin, formData.destination);
       const carbonFootprint = calculateCarbonFootprint(formData.transport_type, distance);
       
-      // Prepare shipment data
       const shipmentData = {
         title: formData.title,
         description: formData.description,
@@ -184,7 +185,6 @@ const CreateShipment = () => {
         carbon_footprint: carbonFootprint
       };
       
-      // Insert shipment into database
       const { data, error } = await supabase
         .from('shipments')
         .insert(shipmentData)
@@ -193,7 +193,6 @@ const CreateShipment = () => {
       
       if (error) throw error;
       
-      // Register on blockchain
       if (data) {
         try {
           const result = await registerShipment({
@@ -205,7 +204,6 @@ const CreateShipment = () => {
           });
           
           if (result && result.transactionHash) {
-            // Update shipment with blockchain hash
             await supabase
               .from('shipments')
               .update({ blockchain_tx_hash: result.transactionHash })
@@ -220,7 +218,6 @@ const CreateShipment = () => {
         description: `Tracking ID: ${trackingId}`
       });
       
-      // Reset form
       setFormData({
         title: '',
         description: '',
@@ -236,7 +233,6 @@ const CreateShipment = () => {
         driver_id: ''
       });
       
-      // Navigate to manager dashboard
       setTimeout(() => {
         navigate('/manager');
       }, 2000);
@@ -321,20 +317,28 @@ const CreateShipment = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="truck">
-                        <Truck className="mr-2 h-4 w-4" />
-                        Truck
+                        <div className="flex items-center">
+                          <Truck className="mr-2 h-4 w-4" />
+                          <span>Truck</span>
+                        </div>
                       </SelectItem>
                       <SelectItem value="train">
-                        <Train className="mr-2 h-4 w-4" />
-                        Train
+                        <div className="flex items-center">
+                          <Package className="mr-2 h-4 w-4" />
+                          <span>Train</span>
+                        </div>
                       </SelectItem>
                       <SelectItem value="ship">
-                        <Ship className="mr-2 h-4 w-4" />
-                        Ship
+                        <div className="flex items-center">
+                          <Package className="mr-2 h-4 w-4" />
+                          <span>Ship</span>
+                        </div>
                       </SelectItem>
                       <SelectItem value="air">
-                        <Package className="mr-2 h-4 w-4" />
-                        Air
+                        <div className="flex items-center">
+                          <Package className="mr-2 h-4 w-4" />
+                          <span>Air</span>
+                        </div>
                       </SelectItem>
                     </SelectContent>
                   </Select>
