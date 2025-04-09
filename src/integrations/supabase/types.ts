@@ -121,6 +121,66 @@ export type Database = {
           },
         ]
       }
+      routes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_optimized: boolean
+          name: string
+          optimized_at: string | null
+          points: Json
+          segments: Json
+          shipments_included: string[]
+          total_carbon_footprint: number
+          total_distance: number
+          total_duration: number
+          total_fuel_consumption: number
+          traffic_conditions: Json | null
+          transport_types: string[]
+          updated_at: string
+          weather_conditions: Json | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_optimized?: boolean
+          name: string
+          optimized_at?: string | null
+          points?: Json
+          segments?: Json
+          shipments_included?: string[]
+          total_carbon_footprint?: number
+          total_distance?: number
+          total_duration?: number
+          total_fuel_consumption?: number
+          traffic_conditions?: Json | null
+          transport_types?: string[]
+          updated_at?: string
+          weather_conditions?: Json | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_optimized?: boolean
+          name?: string
+          optimized_at?: string | null
+          points?: Json
+          segments?: Json
+          shipments_included?: string[]
+          total_carbon_footprint?: number
+          total_distance?: number
+          total_duration?: number
+          total_fuel_consumption?: number
+          traffic_conditions?: Json | null
+          transport_types?: string[]
+          updated_at?: string
+          weather_conditions?: Json | null
+        }
+        Relationships: []
+      }
       sensor_data: {
         Row: {
           battery_level: number | null

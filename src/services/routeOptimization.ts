@@ -1,6 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { Database } from '@/integrations/supabase/types';
 
 // Types for route optimization
 export interface RoutePoint {
@@ -17,8 +18,14 @@ export interface RoutePoint {
 }
 
 export interface RouteSegment {
-  origin: RoutePoint;
-  destination: RoutePoint;
+  origin: {
+    id: string;
+    name: string;
+  };
+  destination: {
+    id: string;
+    name: string;
+  };
   distance: number; // in km
   duration: number; // in minutes
   mode: 'truck' | 'ship' | 'rail' | 'air';
@@ -37,6 +44,8 @@ export interface OptimizedRoute {
   totalFuelConsumption: number;
   transportTypes: string[];
   shipmentsIncluded: string[];
+  isOptimized?: boolean;
+  optimizedAt?: string;
 }
 
 // Sample transport mode emission factors (g CO2 per ton-km)
@@ -70,7 +79,23 @@ export const routeOptimizationService = {
         return [];
       }
       
-      return data as OptimizedRoute[];
+      // Transform database format to our interface format
+      const routes: OptimizedRoute[] = data.map(route => ({
+        id: route.id,
+        name: route.name,
+        points: route.points as RoutePoint[],
+        segments: route.segments as RouteSegment[],
+        totalDistance: route.total_distance,
+        totalDuration: route.total_duration,
+        totalCarbonFootprint: route.total_carbon_footprint,
+        totalFuelConsumption: route.total_fuel_consumption,
+        transportTypes: route.transport_types,
+        shipmentsIncluded: route.shipments_included,
+        isOptimized: route.is_optimized,
+        optimizedAt: route.optimized_at
+      }));
+      
+      return routes;
     } catch (error) {
       console.error('Error fetching routes:', error);
       toast.error('Failed to load routes');
@@ -85,11 +110,29 @@ export const routeOptimizationService = {
         .from('routes')
         .select('*')
         .eq('id', routeId)
-        .single();
+        .maybeSingle();
       
       if (error) throw error;
       
-      return data as OptimizedRoute;
+      if (!data) return null;
+      
+      // Transform database format to our interface format
+      const route: OptimizedRoute = {
+        id: data.id,
+        name: data.name,
+        points: data.points as RoutePoint[],
+        segments: data.segments as RouteSegment[],
+        totalDistance: data.total_distance,
+        totalDuration: data.total_duration,
+        totalCarbonFootprint: data.total_carbon_footprint,
+        totalFuelConsumption: data.total_fuel_consumption,
+        transportTypes: data.transport_types,
+        shipmentsIncluded: data.shipments_included,
+        isOptimized: data.is_optimized,
+        optimizedAt: data.optimized_at
+      };
+      
+      return route;
     } catch (error) {
       console.error(`Error fetching route ${routeId}:`, error);
       toast.error('Failed to load route details');
@@ -128,19 +171,36 @@ export const routeOptimizationService = {
         .update({ 
           points: data.optimizedRoute.points,
           segments: data.optimizedRoute.segments,
-          totalDistance: data.optimizedRoute.totalDistance,
-          totalDuration: data.optimizedRoute.totalDuration,
-          totalCarbonFootprint: data.optimizedRoute.totalCarbonFootprint,
-          totalFuelConsumption: data.optimizedRoute.totalFuelConsumption,
-          isOptimized: true,
-          optimizedAt: new Date().toISOString()
+          total_distance: data.optimizedRoute.totalDistance,
+          total_duration: data.optimizedRoute.totalDuration,
+          total_carbon_footprint: data.optimizedRoute.totalCarbonFootprint,
+          total_fuel_consumption: data.optimizedRoute.totalFuelConsumption,
+          is_optimized: true,
+          optimized_at: new Date().toISOString()
         })
         .eq('id', routeId);
       
       if (updateError) throw updateError;
       
       toast.success('Route successfully optimized');
-      return data.optimizedRoute;
+      
+      // Return the optimized route in our application format
+      const optimizedRoute: OptimizedRoute = {
+        id: route.id,
+        name: route.name,
+        points: data.optimizedRoute.points,
+        segments: data.optimizedRoute.segments,
+        totalDistance: data.optimizedRoute.totalDistance,
+        totalDuration: data.optimizedRoute.totalDuration,
+        totalCarbonFootprint: data.optimizedRoute.totalCarbonFootprint,
+        totalFuelConsumption: data.optimizedRoute.totalFuelConsumption,
+        transportTypes: route.transportTypes,
+        shipmentsIncluded: route.shipmentsIncluded,
+        isOptimized: true,
+        optimizedAt: new Date().toISOString()
+      };
+      
+      return optimizedRoute;
     } catch (error) {
       console.error('Error optimizing route:', error);
       toast.error('Failed to optimize route');
@@ -175,28 +235,48 @@ export const routeOptimizationService = {
         throw new Error('Route generation failed');
       }
       
+      // Prepare route data for insertion
+      const routeData = {
+        name: `${origins[0].name} to ${destinations[0].name}`,
+        points: data.optimizedRoute.points,
+        segments: data.optimizedRoute.segments,
+        total_distance: data.optimizedRoute.totalDistance,
+        total_duration: data.optimizedRoute.totalDuration,
+        total_carbon_footprint: data.optimizedRoute.totalCarbonFootprint,
+        total_fuel_consumption: data.optimizedRoute.totalFuelConsumption,
+        transport_types: preferredModes,
+        is_optimized: true,
+        optimized_at: new Date().toISOString()
+      };
+      
       // Store the generated route
       const { data: savedRoute, error: insertError } = await supabase
         .from('routes')
-        .insert({
-          name: `${origins[0].name} to ${destinations[0].name}`,
-          points: data.optimizedRoute.points,
-          segments: data.optimizedRoute.segments,
-          totalDistance: data.optimizedRoute.totalDistance,
-          totalDuration: data.optimizedRoute.totalDuration,
-          totalCarbonFootprint: data.optimizedRoute.totalCarbonFootprint,
-          totalFuelConsumption: data.optimizedRoute.totalFuelConsumption,
-          transportTypes: preferredModes,
-          isOptimized: true,
-          optimizedAt: new Date().toISOString()
-        })
+        .insert(routeData)
         .select()
         .single();
       
       if (insertError) throw insertError;
       
       toast.success('Multi-modal route generated successfully');
-      return savedRoute as OptimizedRoute;
+      
+      // Return the route in our application format
+      const newRoute: OptimizedRoute = {
+        id: savedRoute.id,
+        name: savedRoute.name,
+        points: savedRoute.points as RoutePoint[],
+        segments: savedRoute.segments as RouteSegment[],
+        totalDistance: savedRoute.total_distance,
+        totalDuration: savedRoute.total_duration,
+        totalCarbonFootprint: savedRoute.total_carbon_footprint,
+        totalFuelConsumption: savedRoute.total_fuel_consumption,
+        transportTypes: savedRoute.transport_types,
+        shipmentsIncluded: savedRoute.shipments_included,
+        isOptimized: savedRoute.is_optimized,
+        optimizedAt: savedRoute.optimized_at
+      };
+      
+      return newRoute;
     } catch (error) {
       console.error('Error generating multi-modal route:', error);
       toast.error('Failed to generate route');

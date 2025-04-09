@@ -46,7 +46,7 @@ const DeliveryUpdates = () => {
   const [shipmentDetails, setShipmentDetails] = useState<Shipment | null>(null);
   const [sensorData, setSensorData] = useState<SensorData[]>([]);
   const [latestSensorData, setLatestSensorData] = useState<SensorData | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<string>('');
+  const [updateStatus, setUpdateStatus] = useState<'processing' | 'in-transit' | 'delivered' | 'delayed'>('in-transit');
   const [notes, setNotes] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const { updateShipmentStatus, verifyBlockchainRecord } = useBlockchain();
@@ -73,7 +73,7 @@ const DeliveryUpdates = () => {
           description: shipment.description,
           origin: shipment.origin,
           destination: shipment.destination,
-          status: shipment.status,
+          status: shipment.status as 'processing' | 'in-transit' | 'delivered' | 'delayed',
           transportType: shipment.transport_type
         }));
         
@@ -111,7 +111,7 @@ const DeliveryUpdates = () => {
           description: shipmentData.description,
           origin: shipmentData.origin,
           destination: shipmentData.destination,
-          status: shipmentData.status,
+          status: shipmentData.status as 'processing' | 'in-transit' | 'delivered' | 'delayed',
           transportType: shipmentData.transport_type
         });
         
@@ -200,7 +200,7 @@ const DeliveryUpdates = () => {
       if (shipmentDetails) {
         setShipmentDetails({
           ...shipmentDetails,
-          status: updateStatus as any
+          status: updateStatus
         });
       }
       
