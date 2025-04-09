@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 interface VerifyRequest {
-  operation: 'verify' | 'register' | 'update';
+  operation: 'verify' | 'register' | 'update' | 'execute-contract' | 'carbon-credits' | 'resolve-dispute';
   hash?: string;
   shipmentData?: {
     id?: string;
@@ -20,6 +20,10 @@ interface VerifyRequest {
   shipmentId?: string;
   status?: string;
   metadata?: any;
+  contractType?: 'payment' | 'customs' | 'delivery';
+  payload?: any;
+  sustainabilityScore?: number;
+  disputeDetails?: any;
 }
 
 // This is a simplified blockchain simulation for demo purposes
@@ -33,7 +37,18 @@ serve(async (req) => {
   }
   
   try {
-    const { operation, hash, shipmentData, shipmentId, status, metadata } = await req.json() as VerifyRequest;
+    const { 
+      operation, 
+      hash, 
+      shipmentData, 
+      shipmentId, 
+      status, 
+      metadata, 
+      contractType, 
+      payload, 
+      sustainabilityScore,
+      disputeDetails 
+    } = await req.json() as VerifyRequest;
     
     console.log(`Blockchain operation: ${operation}`);
     
@@ -109,6 +124,97 @@ serve(async (req) => {
         }
       );
     }
+    else if (operation === 'execute-contract' && contractType && payload) {
+      // Simulate executing a smart contract
+      const txHash = generateRandomHash();
+      const contractAddress = generateRandomContractAddress();
+      
+      let eventEmitted = '';
+      let success = true;
+      
+      switch (contractType) {
+        case 'payment':
+          eventEmitted = 'PaymentCompleted';
+          break;
+        case 'customs':
+          eventEmitted = 'CustomsClearanceApproved';
+          break;
+        case 'delivery':
+          eventEmitted = 'DeliveryConfirmed';
+          break;
+        default:
+          success = false;
+          eventEmitted = 'UnknownEventType';
+      }
+      
+      return new Response(
+        JSON.stringify({
+          success,
+          transactionHash: txHash,
+          contractAddress,
+          eventEmitted,
+          data: payload
+        }),
+        {
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json" 
+          },
+        }
+      );
+    }
+    else if (operation === 'carbon-credits' && shipmentId && sustainabilityScore !== undefined) {
+      // Simulate carbon credits calculation based on sustainability score
+      const tokens = Math.floor(sustainabilityScore / 10);
+      const txHash = generateRandomHash();
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          tokens,
+          transactionHash: txHash,
+          shipmentId
+        }),
+        {
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json" 
+          },
+        }
+      );
+    }
+    else if (operation === 'resolve-dispute' && shipmentId && disputeDetails) {
+      // Simulate dispute resolution based on blockchain consensus
+      const resolved = Math.random() > 0.3; // 70% chance of successful resolution
+      
+      let resolution = '';
+      if (resolved) {
+        const resolutions = [
+          "Resolved in favor of shipper",
+          "Resolved in favor of receiver",
+          "Partial compensation approved",
+          "Insurance claim approved"
+        ];
+        resolution = resolutions[Math.floor(Math.random() * resolutions.length)];
+      } else {
+        resolution = "Pending further review";
+      }
+      
+      return new Response(
+        JSON.stringify({
+          resolved,
+          resolution,
+          shipmentId,
+          disputeDetails
+        }),
+        {
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json" 
+          },
+        }
+      );
+    }
     
     return new Response(
       JSON.stringify({
@@ -151,6 +257,16 @@ function generateRandomHash() {
     hash += characters.charAt(Math.floor(Math.random() * characters.length));
   }
   return hash;
+}
+
+// Generate a random contract address
+function generateRandomContractAddress() {
+  const characters = "0123456789abcdef";
+  let address = "0x";
+  for (let i = 0; i < 40; i++) {
+    address += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return address;
 }
 
 // Generate a random UUID-like ID

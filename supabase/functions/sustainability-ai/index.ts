@@ -8,8 +8,15 @@ const corsHeaders = {
 };
 
 interface AIRequest {
-  action: 'analyze_shipment' | 'generate_suggestions';
+  action: 'analyze_shipment' | 'generate_suggestions' | 'optimize_route' | 'predict_maintenance' | 'calculate_carbon_credits';
   shipmentId?: string;
+  vehicleData?: any;
+  routeParams?: {
+    origin: string;
+    destination: string;
+    transportType: string;
+    currentLocation?: { lat: number; lng: number };
+  };
 }
 
 interface ShipmentData {
@@ -21,6 +28,15 @@ interface ShipmentData {
   carbon_footprint: number;
   weight: number;
   product_type: string;
+}
+
+interface MultiModalRouteSegment {
+  mode: 'truck' | 'rail' | 'ship' | 'air';
+  distance: number;
+  startLocation: string;
+  endLocation: string;
+  carbonFootprint: number;
+  estimatedTime: number; // in minutes
 }
 
 serve(async (req) => {
@@ -39,7 +55,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
     // Parse the request body
-    const { action, shipmentId } = await req.json() as AIRequest;
+    const { action, shipmentId, vehicleData, routeParams } = await req.json() as AIRequest;
     
     if (action === 'analyze_shipment' && shipmentId) {
       // Get shipment data
@@ -91,6 +107,67 @@ serve(async (req) => {
         JSON.stringify({
           success: true,
           message: `Generated ${suggestions.length} sustainability suggestions`,
+        }),
+        {
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json" 
+          },
+        }
+      );
+    }
+    else if (action === 'optimize_route' && routeParams) {
+      // Generate optimized route using AI for multi-modal transportation
+      const optimizedRoute = generateOptimizedRoute(routeParams);
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          optimizedRoute,
+        }),
+        {
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json" 
+          },
+        }
+      );
+    }
+    else if (action === 'predict_maintenance' && vehicleData) {
+      // Use AI to predict maintenance needs based on vehicle data
+      const maintenancePredictions = predictMaintenance(vehicleData);
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          predictions: maintenancePredictions,
+        }),
+        {
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json" 
+          },
+        }
+      );
+    }
+    else if (action === 'calculate_carbon_credits' && shipmentId) {
+      // Get shipment data
+      const { data: shipment, error: shipmentError } = await supabase
+        .from('shipments')
+        .select('*')
+        .eq('id', shipmentId)
+        .single();
+      
+      if (shipmentError) throw shipmentError;
+      
+      // Calculate carbon credits based on sustainability factors
+      const carbonCredits = calculateCarbonCredits(shipment);
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          shipmentId,
+          carbonCredits,
         }),
         {
           headers: { 
@@ -251,7 +328,236 @@ function generateSustainabilitySuggestions(shipments: ShipmentData[]) {
     });
   }
   
+  // Add new AI-powered suggestions for predictive maintenance
+  suggestions.push({
+    title: "Implement predictive maintenance for delivery vehicles",
+    description: "Our AI analysis shows that implementing predictive maintenance for your fleet could reduce fuel consumption by 12% and extend vehicle lifespan. This would result in significant carbon and cost savings.",
+    carbon_savings: 28.5,
+    cost_savings: 350.75,
+    implemented: false
+  });
+  
+  // Add suggestions for carbon credit trading
+  suggestions.push({
+    title: "Participate in blockchain carbon credit marketplace",
+    description: "Based on your sustainability improvements, your company qualifies for carbon credit trading. By tokenizing and trading these credits on our blockchain marketplace, you could offset costs while further incentivizing sustainable practices.",
+    carbon_savings: 45.0,
+    cost_savings: 500.0,
+    implemented: false
+  });
+  
   return suggestions;
+}
+
+// Generate optimized route with multi-modal transport options
+function generateOptimizedRoute(routeParams: AIRequest['routeParams']) {
+  if (!routeParams) return null;
+  
+  const { origin, destination, transportType } = routeParams;
+  
+  // This is a mock implementation - in a real application this would use
+  // actual route optimization algorithms and real distance/time data
+  const segments: MultiModalRouteSegment[] = [];
+  
+  // Create a mock multi-modal route based on the transport type preference
+  if (transportType === 'multi-modal') {
+    // Simulate a route with truck -> rail -> truck segments
+    segments.push({
+      mode: 'truck',
+      startLocation: origin,
+      endLocation: 'Railway Terminal A',
+      distance: 120,
+      carbonFootprint: 120 * 0.092, // kg CO2
+      estimatedTime: 90 // minutes
+    });
+    
+    segments.push({
+      mode: 'rail',
+      startLocation: 'Railway Terminal A',
+      endLocation: 'Railway Terminal B',
+      distance: 500,
+      carbonFootprint: 500 * 0.022, // kg CO2
+      estimatedTime: 240 // minutes
+    });
+    
+    segments.push({
+      mode: 'truck',
+      startLocation: 'Railway Terminal B',
+      endLocation: destination,
+      distance: 80,
+      carbonFootprint: 80 * 0.092, // kg CO2
+      estimatedTime: 70 // minutes
+    });
+  } else if (transportType === 'ship') {
+    // Simulate a route with truck -> ship -> truck segments
+    segments.push({
+      mode: 'truck',
+      startLocation: origin,
+      endLocation: 'Port A',
+      distance: 50,
+      carbonFootprint: 50 * 0.092, // kg CO2
+      estimatedTime: 40 // minutes
+    });
+    
+    segments.push({
+      mode: 'ship',
+      startLocation: 'Port A',
+      endLocation: 'Port B',
+      distance: 800,
+      carbonFootprint: 800 * 0.015, // kg CO2
+      estimatedTime: 2400 // minutes (40 hours)
+    });
+    
+    segments.push({
+      mode: 'truck',
+      startLocation: 'Port B',
+      endLocation: destination,
+      distance: 70,
+      carbonFootprint: 70 * 0.092, // kg CO2
+      estimatedTime: 60 // minutes
+    });
+  } else {
+    // Single mode transport (truck, air, rail)
+    let distance = 600; // Mock distance
+    let carbonFactor = 0.092; // Default to truck
+    let speed = 7; // km per minute
+    
+    if (transportType === 'air') {
+      carbonFactor = 0.82;
+      speed = 15;
+    } else if (transportType === 'rail') {
+      carbonFactor = 0.022;
+      speed = 2;
+    }
+    
+    segments.push({
+      mode: transportType as any,
+      startLocation: origin,
+      endLocation: destination,
+      distance,
+      carbonFootprint: distance * carbonFactor,
+      estimatedTime: distance / speed
+    });
+  }
+  
+  // Calculate totals
+  const totalDistance = segments.reduce((sum, segment) => sum + segment.distance, 0);
+  const totalCarbonFootprint = segments.reduce((sum, segment) => sum + segment.carbonFootprint, 0);
+  const totalTime = segments.reduce((sum, segment) => sum + segment.estimatedTime, 0);
+  
+  return {
+    origin,
+    destination,
+    segments,
+    summary: {
+      totalDistance,
+      totalCarbonFootprint,
+      totalTime,
+      primaryMode: transportType
+    }
+  };
+}
+
+// Predict maintenance needs for vehicles
+function predictMaintenance(vehicleData: any) {
+  // This is a simplified mock implementation
+  if (!vehicleData) return [];
+  
+  const { vehicleId, mileage, engineHours, lastMaintenanceDate, telemetryData } = vehicleData;
+  
+  // In a real implementation, this would use ML models trained on vehicle data
+  const maintenanceItems = [];
+  
+  // Mock logic to simulate AI predictions
+  if (mileage > 5000 && Date.now() - new Date(lastMaintenanceDate).getTime() > 90 * 24 * 60 * 60 * 1000) {
+    maintenanceItems.push({
+      item: "Oil Change",
+      urgency: "High",
+      estimatedCost: 50,
+      fuelSavings: 3, // percentage
+      emissionReduction: 2.5 // percentage
+    });
+  }
+  
+  if (mileage > 20000) {
+    maintenanceItems.push({
+      item: "Transmission Service",
+      urgency: "Medium",
+      estimatedCost: 150,
+      fuelSavings: 2,
+      emissionReduction: 1.8
+    });
+  }
+  
+  if (telemetryData && telemetryData.tirePressure && 
+      telemetryData.tirePressure.some((pressure: number) => pressure < 32)) {
+    maintenanceItems.push({
+      item: "Tire Pressure Adjustment",
+      urgency: "High",
+      estimatedCost: 0,
+      fuelSavings: 4,
+      emissionReduction: 4
+    });
+  }
+  
+  if (telemetryData && telemetryData.batteryHealth && telemetryData.batteryHealth < 70) {
+    maintenanceItems.push({
+      item: "Battery Replacement",
+      urgency: "Medium",
+      estimatedCost: 120,
+      fuelSavings: 1,
+      emissionReduction: 0.5
+    });
+  }
+  
+  return {
+    vehicleId,
+    predictionDate: new Date().toISOString(),
+    maintenanceItems,
+    summary: {
+      totalItems: maintenanceItems.length,
+      criticalItems: maintenanceItems.filter(item => item.urgency === "High").length,
+      potentialFuelSavings: maintenanceItems.reduce((sum, item) => sum + item.fuelSavings, 0),
+      potentialEmissionReduction: maintenanceItems.reduce((sum, item) => sum + item.emissionReduction, 0)
+    }
+  };
+}
+
+// Calculate carbon credits
+function calculateCarbonCredits(shipment: ShipmentData) {
+  // Calculate base score from transport type efficiency
+  const transportEfficiency = {
+    'rail': 0.9,
+    'ship': 0.7,
+    'multi-modal': 0.6,
+    'truck': 0.4,
+    'air': 0.2
+  };
+  
+  const efficiency = transportEfficiency[shipment.transport_type as keyof typeof transportEfficiency] || 0.5;
+  
+  // Calculate carbon savings compared to industry average
+  const industryAverageCO2 = shipment.weight * 0.1; // kg CO2 per kg of freight (mock value)
+  const actualCO2 = shipment.carbon_footprint;
+  const carbonSaved = Math.max(0, industryAverageCO2 - actualCO2);
+  
+  // Calculate credits (1 credit per 10kg CO2 saved)
+  const credits = Math.floor(carbonSaved / 10);
+  
+  // Apply multiplier based on transport efficiency
+  const adjustedCredits = Math.round(credits * (1 + efficiency));
+  
+  return {
+    credits: adjustedCredits,
+    carbonSaved,
+    efficiency,
+    monetaryValue: adjustedCredits * 5, // $5 per credit (mock value)
+    breakdown: {
+      baseCredits: credits,
+      efficiencyBonus: adjustedCredits - credits,
+      totalCredits: adjustedCredits
+    }
+  };
 }
 
 // Helper to calculate potential carbon savings

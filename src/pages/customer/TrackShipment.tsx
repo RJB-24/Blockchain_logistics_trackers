@@ -28,8 +28,11 @@ import {
   Star, 
   AlertTriangle, 
   Ship, 
-  Train 
+  Train,
+  QrCode,
+  Shield 
 } from 'lucide-react';
+import { useBlockchain } from '@/hooks/useBlockchain';
 
 interface Shipment {
   id: string;
@@ -73,8 +76,11 @@ const TrackShipment = () => {
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [tab, setTab] = useState('status');
+  const [showQrCode, setShowQrCode] = useState(false);
+  const [blockchainDetails, setBlockchainDetails] = useState<any>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { verifyBlockchainRecord, isLoading: blockchainLoading } = useBlockchain();
 
   useEffect(() => {
     fetchUserShipments();
@@ -111,6 +117,7 @@ const TrackShipment = () => {
     setNotFound(false);
     setShipment(null);
     setSensorData([]);
+    setBlockchainDetails(null);
     
     try {
       const { data: shipmentData, error: shipmentError } = await supabase
@@ -134,6 +141,14 @@ const TrackShipment = () => {
       
       setShipment(shipmentData as Shipment);
       
+      // Fetch blockchain record if available
+      if (shipmentData.blockchain_tx_hash) {
+        const blockchainRecord = await verifyBlockchainRecord(shipmentData.blockchain_tx_hash);
+        if (blockchainRecord) {
+          setBlockchainDetails(blockchainRecord);
+        }
+      }
+      
       const { data: sensorDataResult, error: sensorError } = await supabase
         .from('sensor_data')
         .select('*')
@@ -154,9 +169,9 @@ const TrackShipment = () => {
           latitude: data.latitude,
           longitude: data.longitude,
           // Add these required properties with default values if they don't exist
-          status: data.status || shipmentData.status || 'unknown',
-          location: data.location || 'Unknown location',
-          notes: data.notes || null,
+          status: shipmentData.status || 'unknown',
+          location: data.latitude && data.longitude ? `${data.latitude.toFixed(2)}, ${data.longitude.toFixed(2)}` : 'Unknown location',
+          notes: null,
           battery_level: data.battery_level,
           shock_detected: data.shock_detected || false,
           blockchain_tx_hash: data.blockchain_tx_hash
@@ -236,11 +251,43 @@ const TrackShipment = () => {
     };
   };
 
+  const getLatestSensorData = () => {
+    if (sensorData.length === 0) return null;
+    
+    const latestData = [...sensorData]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+    
+    return {
+      temperature: latestData.temperature,
+      humidity: latestData.humidity,
+      shockDetected: latestData.shock_detected
+    };
+  };
+
   const calculateProgress = () => {
     if (!shipment) return 0;
     
     const statusStep = getStatusStep(shipment.status);
     return (statusStep / 4) * 100;
+  };
+
+  const getSustainabilityScore = () => {
+    if (!shipment) return 0;
+    
+    // In a real app, this would be calculated based on various factors
+    // For this mock, we'll use carbon footprint as a basis
+    const maxFootprint = 100; // Assume this is the highest expected footprint
+    const rawScore = 100 - ((shipment.carbon_footprint / maxFootprint) * 100);
+    return Math.max(0, Math.min(100, Math.round(rawScore)));
+  };
+
+  const showBlockchainVerification = () => {
+    if (!shipment?.blockchain_tx_hash) {
+      toast.error('No blockchain record available for this shipment');
+      return;
+    }
+
+    setTab('blockchain');
   };
 
   return (
@@ -305,8 +352,14 @@ const TrackShipment = () => {
                       Tracking ID: {shipment.tracking_id}
                     </CardDescription>
                   </div>
-                  <div>
+                  <div className="flex items-center space-x-2">
                     {getStatusBadge(shipment.status)}
+                    {shipment.blockchain_tx_hash && (
+                      <Badge variant="outline" className="border-eco-purple text-eco-purple flex items-center">
+                        <Shield className="h-3 w-3 mr-1" />
+                        Blockchain Verified
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </CardHeader>
@@ -388,23 +441,48 @@ const TrackShipment = () => {
                       <Leaf className="h-4 w-4 text-green-500 mr-1" />
                       <span className="font-medium">{shipment.carbon_footprint} kg CO₂</span>
                     </div>
+                    <div className="mt-1 text-xs text-green-500">
+                      Sustainability Score: {getSustainabilityScore()}%
+                    </div>
                   </div>
                 </div>
                 
                 <div className="flex justify-between items-center mt-6">
                   <div className="flex items-center">
-                    <Package className="h-4 w-4 mr-1 text-muted-foreground" />
+                    {shipment.transport_type === 'ship' ? (
+                      <Ship className="h-4 w-4 mr-1 text-blue-500" />
+                    ) : shipment.transport_type === 'rail' ? (
+                      <Train className="h-4 w-4 mr-1 text-purple-500" />
+                    ) : (
+                      <Truck className="h-4 w-4 mr-1 text-muted-foreground" />
+                    )}
                     <span className="text-sm text-muted-foreground">
                       {shipment.product_type} • {shipment.quantity} units • {shipment.weight} kg
                     </span>
                   </div>
                   
-                  {shipment.blockchain_tx_hash && (
-                    <Badge variant="outline" className="border-eco-purple text-eco-purple">
-                      Blockchain Verified
-                    </Badge>
-                  )}
+                  <Button variant="outline" size="sm" onClick={() => setShowQrCode(!showQrCode)}>
+                    <QrCode className="h-4 w-4 mr-2" />
+                    {showQrCode ? 'Hide' : 'Show'} QR Code
+                  </Button>
                 </div>
+                
+                {showQrCode && (
+                  <div className="mt-4 flex flex-col items-center justify-center border rounded-lg p-4">
+                    <div className="bg-white p-2 rounded-md">
+                      {/* Mock QR code */}
+                      <div className="w-32 h-32 grid grid-cols-6 grid-rows-6 gap-1">
+                        {Array.from({ length: 36 }).map((_, i) => (
+                          <div key={i} className={`bg-black ${Math.random() > 0.3 ? 'opacity-100' : 'opacity-0'}`}></div>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-sm mt-2 text-center">
+                      Scan this QR code to verify this shipment's sustainability 
+                      and track its journey on the blockchain
+                    </p>
+                  </div>
+                )}
                 
                 <div className="flex justify-between mt-6">
                   <Button
@@ -416,15 +494,28 @@ const TrackShipment = () => {
                     View Carbon Report
                   </Button>
                   
-                  {shipment.status === 'delivered' && (
-                    <Button
-                      onClick={() => navigate(`/customer/review/${shipment.id}`)}
-                      className="bg-eco-purple hover:bg-eco-purple/90"
-                    >
-                      <Star className="mr-2 h-4 w-4" />
-                      Leave a Review
-                    </Button>
-                  )}
+                  <div className="space-x-2">
+                    {shipment.blockchain_tx_hash && (
+                      <Button 
+                        variant="outline" 
+                        onClick={showBlockchainVerification}
+                        className="flex items-center"
+                      >
+                        <Shield className="mr-2 h-4 w-4" />
+                        Blockchain Details
+                      </Button>
+                    )}
+                    
+                    {shipment.status === 'delivered' && (
+                      <Button
+                        onClick={() => navigate(`/customer/review/${shipment.id}`)}
+                        className="bg-eco-purple hover:bg-eco-purple/90"
+                      >
+                        <Star className="mr-2 h-4 w-4" />
+                        Leave a Review
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -438,6 +529,9 @@ const TrackShipment = () => {
                       <TabsTrigger value="status">Status Updates</TabsTrigger>
                       <TabsTrigger value="map">Map View</TabsTrigger>
                       <TabsTrigger value="sensor">Sensor Data</TabsTrigger>
+                      {shipment.blockchain_tx_hash && (
+                        <TabsTrigger value="blockchain">Blockchain</TabsTrigger>
+                      )}
                     </TabsList>
                   </Tabs>
                 </CardHeader>
@@ -506,6 +600,8 @@ const TrackShipment = () => {
                         originLocation={shipment.origin}
                         destinationLocation={shipment.destination}
                         currentLocation={getMostRecentCoordinates()}
+                        transportType={shipment.transport_type}
+                        sensorData={getLatestSensorData()}
                       />
                     </div>
                   </TabsContent>
@@ -526,6 +622,7 @@ const TrackShipment = () => {
                               <TableHead>Temperature</TableHead>
                               <TableHead>Humidity</TableHead>
                               <TableHead>Status</TableHead>
+                              <TableHead>Alerts</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -538,10 +635,98 @@ const TrackShipment = () => {
                                 <TableCell>{data.temperature !== null ? `${data.temperature}°C` : 'N/A'}</TableCell>
                                 <TableCell>{data.humidity !== null ? `${data.humidity}%` : 'N/A'}</TableCell>
                                 <TableCell>{getStatusBadge(data.status)}</TableCell>
+                                <TableCell>
+                                  {data.shock_detected && (
+                                    <Badge variant="destructive">Shock Detected</Badge>
+                                  )}
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
                         </Table>
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="blockchain">
+                    {!shipment.blockchain_tx_hash ? (
+                      <div className="text-center py-12">
+                        <AlertTriangle className="h-12 w-12 mx-auto text-muted-foreground" />
+                        <p className="mt-2 text-muted-foreground">No blockchain data available</p>
+                      </div>
+                    ) : blockchainLoading ? (
+                      <div className="flex justify-center py-12">
+                        <div className="animate-spin h-8 w-8 border-2 border-eco-purple border-t-transparent rounded-full" />
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="p-4 border rounded-lg">
+                          <h3 className="font-medium mb-2">Blockchain Verification</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm mb-1"><strong>Transaction Hash:</strong></p>
+                              <p className="text-xs font-mono bg-gray-50 p-2 rounded-md overflow-auto">
+                                {shipment.blockchain_tx_hash}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm mb-1"><strong>Verification Status:</strong></p>
+                              <Badge className="bg-green-500">Verified on Blockchain</Badge>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {blockchainDetails && (
+                          <div className="p-4 border rounded-lg">
+                            <h3 className="font-medium mb-2">Transaction Details</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-sm"><strong>Block Number:</strong> {blockchainDetails.blockNumber}</p>
+                                <p className="text-sm"><strong>Timestamp:</strong> {new Date(blockchainDetails.timestamp).toLocaleString()}</p>
+                                <p className="text-sm"><strong>Gas Used:</strong> {blockchainDetails.gasUsed}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm"><strong>From:</strong></p>
+                                <p className="text-xs font-mono truncate">{blockchainDetails.from}</p>
+                                <p className="text-sm mt-1"><strong>To:</strong></p>
+                                <p className="text-xs font-mono truncate">{blockchainDetails.to}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="p-4 border rounded-lg">
+                          <h3 className="font-medium mb-2">Smart Contracts</h3>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
+                              <div>
+                                <p className="font-medium">Payment Contract</p>
+                                <p className="text-xs text-muted-foreground">Handles automated payments</p>
+                              </div>
+                              <Badge variant="outline" className="border-green-500 text-green-500">Executed</Badge>
+                            </div>
+                            
+                            <div className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
+                              <div>
+                                <p className="font-medium">Custody Contract</p>
+                                <p className="text-xs text-muted-foreground">Manages ownership transfer</p>
+                              </div>
+                              <Badge variant="outline" className={shipment.status === 'delivered' ? 'border-green-500 text-green-500' : 'border-yellow-500 text-yellow-500'}>
+                                {shipment.status === 'delivered' ? 'Executed' : 'Pending'}
+                              </Badge>
+                            </div>
+                            
+                            <div className="flex justify-between items-center p-2 bg-gray-50 rounded-md">
+                              <div>
+                                <p className="font-medium">Carbon Credits</p>
+                                <p className="text-xs text-muted-foreground">Sustainability tokens</p>
+                              </div>
+                              <Badge variant="outline" className="border-blue-500 text-blue-500">
+                                {Math.floor(getSustainabilityScore() / 10)} Credits
+                              </Badge>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </TabsContent>

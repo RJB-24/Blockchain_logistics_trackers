@@ -22,6 +22,7 @@ interface ShipmentBlockchainData {
   destination?: string;
   rating?: number;
   userId?: string;
+  sustainabilityScore?: number;
 }
 
 interface BlockchainRecordResult {
@@ -35,6 +36,14 @@ interface BlockchainRecordResult {
     status?: string;
     verified: boolean;
   };
+}
+
+interface SmartContractResult {
+  success: boolean;
+  transactionHash: string;
+  contractAddress?: string;
+  eventEmitted?: string;
+  data?: any;
 }
 
 export function useBlockchain() {
@@ -125,12 +134,81 @@ export function useBlockchain() {
     }
   };
 
+  // Execute smart contract for payment, customs, or delivery confirmation
+  const executeSmartContract = async (contractType: 'payment' | 'customs' | 'delivery', payload: any): Promise<SmartContractResult | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+        body: { operation: 'execute-contract', contractType, payload }
+      });
+      
+      if (error) throw error;
+      return data as SmartContractResult;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Smart contract execution error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get carbon credit tokens for sustainable practices
+  const getCarbonCredits = async (shipmentId: string, sustainabilityScore: number): Promise<{ success: boolean, tokens: number } | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+        body: { operation: 'carbon-credits', shipmentId, sustainabilityScore }
+      });
+      
+      if (error) throw error;
+      return data as { success: boolean, tokens: number };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Carbon credits error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Resolve disputes using blockchain
+  const resolveDispute = async (shipmentId: string, disputeDetails: any): Promise<{ resolved: boolean, resolution: string } | null> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+        body: { operation: 'resolve-dispute', shipmentId, disputeDetails }
+      });
+      
+      if (error) throw error;
+      return data as { resolved: boolean, resolution: string };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
+      console.error('Dispute resolution error:', err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     isLoading,
     error,
     verifyBlockchainRecord,
     registerShipment,
     updateShipmentStatus,
-    verifyOnBlockchain
+    verifyOnBlockchain,
+    executeSmartContract,
+    getCarbonCredits,
+    resolveDispute
   };
 }
