@@ -1,162 +1,270 @@
 
-import { TruckIcon, PackageIcon, AlertTriangle, Leaf, ArrowUpRight } from 'lucide-react';
-import MainLayout from '@/components/layout/MainLayout';
-import StatCard from '@/components/dashboard/StatCard';
-import ShipmentStatusCard from '@/components/dashboard/ShipmentStatusCard';
-import MapView from '@/components/dashboard/MapView';
-import BlockchainTransactionList from '@/components/dashboard/BlockchainTransactionList';
-import CarbonFootprintChart from '@/components/sustainability/CarbonFootprintChart';
-import SustainabilityScore from '@/components/sustainability/SustainabilityScore';
+import { Link } from 'react-router-dom';
+import { Leaf, TruckIcon, Server, BarChart3, Shield, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
 
-// Mock data for active shipments
-const activeShipments = [
-  {
-    id: 'SH-2025-001',
-    title: 'Medical Supplies',
-    origin: 'New York, USA',
-    destination: 'Toronto, Canada',
-    status: 'in-transit' as const,
-    eta: 'Apr 11, 2025',
-    carbonFootprint: 35,
-  },
-  {
-    id: 'SH-2025-002',
-    title: 'Electronics Batch',
-    origin: 'Shenzhen, China',
-    destination: 'Los Angeles, USA',
-    status: 'processing' as const,
-    eta: 'Apr 15, 2025',
-    carbonFootprint: 68,
-  },
-  {
-    id: 'SH-2025-003',
-    title: 'Food Products',
-    origin: 'Miami, USA',
-    destination: 'Atlanta, USA',
-    status: 'delayed' as const,
-    eta: 'Apr 12, 2025',
-    carbonFootprint: 25,
-  },
-];
+// Define colors based on your provided color palette
+const colors = {
+  primary: '#f2f4d5',   // Light cream
+  secondary: '#2e2c31', // Dark gray
+  tertiary: '#3b431e',  // Olive green
+  accent: '#6f61ef'     // Purple
+};
 
-const Dashboard = () => {
+const Index = () => {
+  const { user, userRole } = useAuth();
+
   return (
-    <MainLayout>
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-bold">Dashboard</h1>
-            <p className="text-muted-foreground">Welcome to EcoFreight Ledger</p>
+    <div style={{ backgroundColor: colors.primary }} className="min-h-screen">
+      {/* Header */}
+      <header className="py-4 px-4 lg:px-8" style={{ backgroundColor: 'white' }}>
+        <div className="container mx-auto flex justify-between items-center">
+          <div className="flex items-center">
+            <Leaf className="h-8 w-8" style={{ color: colors.tertiary }} />
+            <span className="text-xl font-bold ml-2" style={{ color: colors.secondary }}>EcoFreight</span>
           </div>
-          <Button className="mt-4 sm:mt-0 bg-eco-purple hover:bg-eco-purple/90">
-            <ArrowUpRight className="mr-2 h-4 w-4" /> New Shipment
-          </Button>
-        </div>
-
-        {/* Sustainability score and stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-          <div className="md:col-span-1 flex justify-center">
-            <SustainabilityScore score={72} previousScore={65} size="lg" />
-          </div>
-          <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatCard 
-              title="Active Shipments" 
-              value={32} 
-              icon={<TruckIcon className="h-6 w-6 text-eco-dark" />} 
-              trend={{ value: 12, isPositive: true }}
-            />
-            <StatCard 
-              title="Warehouse Inventory" 
-              value="4,281 units" 
-              icon={<PackageIcon className="h-6 w-6 text-eco-dark" />} 
-              trend={{ value: 8, isPositive: true }}
-            />
-            <StatCard 
-              title="Carbon Reduction" 
-              value="28%" 
-              icon={<Leaf className="h-6 w-6 text-eco-purple" />} 
-              trend={{ value: 5, isPositive: true }}
-            />
+          <nav className="hidden md:flex items-center space-x-6">
+            <a href="#features" className="text-sm font-medium" style={{ color: colors.secondary }}>Features</a>
+            <a href="#how-it-works" className="text-sm font-medium" style={{ color: colors.secondary }}>How It Works</a>
+            <a href="#about" className="text-sm font-medium" style={{ color: colors.secondary }}>About</a>
+            <Link to="/login">
+              <Button variant="outline" style={{ borderColor: colors.accent, color: colors.accent }}>
+                Log In
+              </Button>
+            </Link>
+            <Link to="/signup">
+              <Button style={{ backgroundColor: colors.accent, color: 'white' }}>
+                Sign Up
+              </Button>
+            </Link>
+          </nav>
+          <div className="md:hidden">
+            {/* Mobile menu button would go here */}
+            <Button variant="outline" size="icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-menu"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+            </Button>
           </div>
         </div>
+      </header>
 
-        {/* Map and transactions */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          <div className="lg:col-span-2">
-            <MapView />
-          </div>
-          <div className="lg:col-span-1">
-            <BlockchainTransactionList />
+      {/* Hero Section */}
+      <section className="py-20 px-4 lg:px-8">
+        <div className="container mx-auto text-center">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6" style={{ color: colors.secondary }}>
+            Transforming Logistics for a Sustainable Future
+          </h1>
+          <p className="text-xl max-w-3xl mx-auto mb-8" style={{ color: colors.secondary }}>
+            Track shipments in real-time, reduce carbon emissions, and optimize logistics operations with our blockchain-based solution.
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Link to="/signup">
+              <Button size="lg" style={{ backgroundColor: colors.accent, color: 'white' }}>
+                Get Started
+              </Button>
+            </Link>
+            <Button size="lg" variant="outline" style={{ borderColor: colors.tertiary, color: colors.tertiary }}>
+              Watch Demo
+            </Button>
           </div>
         </div>
+      </section>
 
-        {/* Active shipments */}
-        <div className="mb-6">
-          <h2 className="text-xl font-bold mb-4">Active Shipments</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {activeShipments.map(shipment => (
-              <ShipmentStatusCard key={shipment.id} shipment={shipment} />
-            ))}
-          </div>
-        </div>
-
-        {/* Carbon footprint section */}
-        <div className="mb-6">
-          <h2 className="text-xl font-bold mb-4">Sustainability Insights</h2>
-          <CarbonFootprintChart />
-        </div>
-
-        {/* AI Suggestions */}
-        <div className="mb-6">
-          <h2 className="text-xl font-bold mb-4">AI Recommendations</h2>
-          <div className="eco-card p-6">
-            <div className="flex items-start space-x-4">
-              <div className="bg-eco-purple/10 p-3 rounded-full">
-                <Leaf className="h-6 w-6 text-eco-purple" />
+      {/* Features Section */}
+      <section id="features" className="py-20 px-4 lg:px-8" style={{ backgroundColor: 'white' }}>
+        <div className="container mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-12" style={{ color: colors.secondary }}>
+            Key Features
+          </h2>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {/* Feature 1 */}
+            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: colors.primary }}>
+                <TruckIcon className="h-6 w-6" style={{ color: colors.tertiary }} />
               </div>
-              <div>
-                <h3 className="font-medium text-lg">Sustainability Opportunities</h3>
-                <ul className="mt-3 space-y-3">
-                  <li className="flex items-start">
-                    <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium">Switch to rail for Los Angeles shipments</p>
-                      <p className="text-sm text-muted-foreground">Switching from air freight to rail can reduce carbon emissions by up to 75% for your LA route.</p>
-                      <div className="mt-2">
-                        <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full mr-2">
-                          -52% CO₂
-                        </span>
-                        <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
-                          +$1,200 savings
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                  <li className="flex items-start">
-                    <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium">Consolidate Atlanta shipments</p>
-                      <p className="text-sm text-muted-foreground">You have 3 half-empty trucks going to Atlanta next week. Consolidating could save fuel and reduce emissions.</p>
-                      <div className="mt-2">
-                        <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full mr-2">
-                          -28% CO₂
-                        </span>
-                        <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
-                          +$800 savings
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                </ul>
-                <Button className="mt-4 bg-eco-purple hover:bg-eco-purple/90">View All Recommendations</Button>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>Real-Time Tracking</h3>
+              <p style={{ color: colors.secondary }}>
+                Track your shipments in real-time with GPS and IoT sensors. Get precise location updates and estimated delivery times.
+              </p>
+            </div>
+            
+            {/* Feature 2 */}
+            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: colors.primary }}>
+                <Server className="h-6 w-6" style={{ color: colors.tertiary }} />
               </div>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>Blockchain Transparency</h3>
+              <p style={{ color: colors.secondary }}>
+                Verify the entire history of your shipments with immutable blockchain records, ensuring transparency and trust.
+              </p>
+            </div>
+            
+            {/* Feature 3 */}
+            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: colors.primary }}>
+                <BarChart3 className="h-6 w-6" style={{ color: colors.tertiary }} />
+              </div>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>Sustainability Insights</h3>
+              <p style={{ color: colors.secondary }}>
+                Get AI-powered recommendations to reduce carbon emissions and optimize your logistics operations.
+              </p>
+            </div>
+            
+            {/* Feature 4 */}
+            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: colors.primary }}>
+                <Shield className="h-6 w-6" style={{ color: colors.tertiary }} />
+              </div>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>Smart Contract Automation</h3>
+              <p style={{ color: colors.secondary }}>
+                Automate payments, customs clearance, and delivery confirmations with secure smart contracts.
+              </p>
+            </div>
+            
+            {/* Feature 5 */}
+            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: colors.primary }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-cpu" style={{ color: colors.tertiary }}><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
+              </div>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>IoT Integration</h3>
+              <p style={{ color: colors.secondary }}>
+                Monitor temperature, humidity, and shock detection for sensitive goods to ensure optimal conditions.
+              </p>
+            </div>
+            
+            {/* Feature 6 */}
+            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: colors.primary }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-route" style={{ color: colors.tertiary }}><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
+              </div>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>Route Optimization</h3>
+              <p style={{ color: colors.secondary }}>
+                Find the most efficient routes for delivery based on real-time traffic, weather, and historical data.
+              </p>
             </div>
           </div>
         </div>
-      </div>
-    </MainLayout>
+      </section>
+
+      {/* How It Works Section */}
+      <section id="how-it-works" className="py-20 px-4 lg:px-8">
+        <div className="container mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-12" style={{ color: colors.secondary }}>
+            How It Works
+          </h2>
+          <div className="grid md:grid-cols-3 gap-8">
+            {/* Step 1 */}
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: colors.accent, color: 'white' }}>
+                1
+              </div>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>Register & Connect</h3>
+              <p style={{ color: colors.secondary }}>
+                Create an account and connect your logistics operations to our platform.
+              </p>
+            </div>
+            
+            {/* Step 2 */}
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: colors.accent, color: 'white' }}>
+                2
+              </div>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>Track & Monitor</h3>
+              <p style={{ color: colors.secondary }}>
+                Track your shipments in real-time and monitor their status throughout the journey.
+              </p>
+            </div>
+            
+            {/* Step 3 */}
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: colors.accent, color: 'white' }}>
+                3
+              </div>
+              <h3 className="text-xl font-semibold mb-2" style={{ color: colors.secondary }}>Optimize & Save</h3>
+              <p style={{ color: colors.secondary }}>
+                Receive AI-powered recommendations to optimize routes, reduce emissions, and save costs.
+              </p>
+            </div>
+          </div>
+          <div className="text-center mt-12">
+            <Link to="/signup">
+              <Button size="lg" className="gap-2" style={{ backgroundColor: colors.accent, color: 'white' }}>
+                Get Started Now <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* About Section */}
+      <section id="about" className="py-20 px-4 lg:px-8" style={{ backgroundColor: 'white' }}>
+        <div className="container mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-12" style={{ color: colors.secondary }}>
+            About EcoFreight
+          </h2>
+          <div className="max-w-3xl mx-auto text-center">
+            <p className="text-lg mb-6" style={{ color: colors.secondary }}>
+              EcoFreight is a revolutionary blockchain-based logistics platform designed to make supply chains more sustainable, efficient, and transparent.
+            </p>
+            <p className="text-lg mb-6" style={{ color: colors.secondary }}>
+              Our mission is to transform the logistics industry by leveraging cutting-edge technologies like blockchain, IoT, and AI to reduce carbon emissions, optimize operations, and create trust among all stakeholders.
+            </p>
+            <p className="text-lg" style={{ color: colors.secondary }}>
+              Founded by a team of logistics experts and technology innovators, EcoFreight aims to address the pressing challenges of environmental sustainability while improving operational efficiency.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-10 px-4 lg:px-8" style={{ backgroundColor: colors.secondary, color: 'white' }}>
+        <div className="container mx-auto">
+          <div className="grid md:grid-cols-4 gap-8">
+            <div>
+              <div className="flex items-center mb-4">
+                <Leaf className="h-6 w-6" style={{ color: colors.primary }} />
+                <span className="text-xl font-bold ml-2" style={{ color: colors.primary }}>EcoFreight</span>
+              </div>
+              <p className="text-sm" style={{ color: colors.primary }}>
+                Transforming logistics for a sustainable future.
+              </p>
+            </div>
+            <div>
+              <h4 className="font-semibold mb-4" style={{ color: colors.primary }}>Features</h4>
+              <ul className="space-y-2 text-sm" style={{ color: colors.primary }}>
+                <li>Real-Time Tracking</li>
+                <li>Blockchain Transparency</li>
+                <li>Sustainability Insights</li>
+                <li>Smart Contract Automation</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold mb-4" style={{ color: colors.primary }}>Company</h4>
+              <ul className="space-y-2 text-sm" style={{ color: colors.primary }}>
+                <li>About Us</li>
+                <li>Blog</li>
+                <li>Careers</li>
+                <li>Contact</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold mb-4" style={{ color: colors.primary }}>Legal</h4>
+              <ul className="space-y-2 text-sm" style={{ color: colors.primary }}>
+                <li>Terms of Service</li>
+                <li>Privacy Policy</li>
+                <li>Cookie Policy</li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-gray-700 mt-10 pt-6 text-center">
+            <p className="text-sm" style={{ color: colors.primary }}>
+              © 2025 EcoFreight. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 };
 
-export default Dashboard;
+export default Index;

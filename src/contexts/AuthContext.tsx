@@ -1,48 +1,155 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { firebaseService, User } from '@/services/firebase';
+import { supabase } from '@/integrations/supabase/client';
+import { User, Session } from '@supabase/supabase-js';
+import { useToast } from '@/hooks/use-toast';
+import { toast } from '@/components/ui/sonner';
+
+export type UserRole = 'manager' | 'driver' | 'customer';
+
+export interface UserProfile {
+  id: string;
+  full_name: string;
+  avatar_url?: string;
+  company?: string;
+  role?: UserRole;
+}
 
 interface AuthContextType {
   user: User | null;
+  session: Session | null;
+  profile: UserProfile | null;
+  userRole: UserRole | null;
   loading: boolean;
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
+  getProfileById: (id: string) => Promise<UserProfile | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast: uiToast } = useToast();
+
+  // Fetch profile data including role
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      // Get the user profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (profileError) throw profileError;
+
+      // Get the user role
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .single();
+
+      if (roleError) throw roleError;
+
+      const userProfile: UserProfile = {
+        ...profileData,
+        role: roleData.role as UserRole,
+      };
+
+      setProfile(userProfile);
+      setUserRole(roleData.role as UserRole);
+      return userProfile;
+    } catch (err) {
+      console.error('Error fetching user profile:', err);
+      return null;
+    }
+  };
+
+  // Utility function to get profile by ID (useful for other components)
+  const getProfileById = async (id: string): Promise<UserProfile | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) throw error;
+      return data as UserProfile;
+    } catch (err) {
+      console.error('Error fetching profile by ID:', err);
+      return null;
+    }
+  };
 
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        const currentUser = await firebaseService.auth.getCurrentUser();
-        setUser(currentUser);
-      } catch (err) {
-        console.error('Error initializing auth:', err);
-        setError('Failed to initialize authentication');
-      } finally {
-        setLoading(false);
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, currentSession) => {
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        
+        // If we have a user, fetch their profile data
+        if (currentSession?.user) {
+          // Use setTimeout to avoid potential recursion issues
+          setTimeout(() => {
+            fetchUserProfile(currentSession.user.id);
+          }, 0);
+        } else {
+          setProfile(null);
+          setUserRole(null);
+        }
       }
-    };
+    );
 
-    initAuth();
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+      
+      if (currentSession?.user) {
+        fetchUserProfile(currentSession.user.id);
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const signIn = async (email: string, password: string) => {
     setLoading(true);
     setError(null);
     try {
-      const user = await firebaseService.auth.signIn(email, password);
-      setUser(user);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Welcome back!',
+        description: 'You have successfully signed in.',
+      });
+      
+      return;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to sign in';
       setError(errorMessage);
+      toast({
+        title: 'Sign in failed',
+        description: errorMessage,
+        variant: 'destructive',
+      });
       throw err;
     } finally {
       setLoading(false);
@@ -53,11 +160,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
-      await firebaseService.auth.signOut();
-      setUser(null);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      toast({
+        title: 'Signed out',
+        description: 'You have been successfully signed out.',
+      });
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to sign out';
       setError(errorMessage);
+      toast({
+        title: 'Sign out failed',
+        description: errorMessage,
+        variant: 'destructive',
+      });
       throw err;
     } finally {
       setLoading(false);
@@ -68,11 +185,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
-      const user = await firebaseService.auth.signUp(email, password, name);
-      setUser(user);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      // Create the user account
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
+        },
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Account created',
+        description: 'Your account has been successfully created.',
+      });
+      
+      return;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to create account';
       setError(errorMessage);
+      toast({
+        title: 'Sign up failed',
+        description: errorMessage,
+        variant: 'destructive',
+      });
       throw err;
     } finally {
       setLoading(false);
@@ -80,7 +219,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, signIn, signOut, signUp }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      session,
+      profile,
+      userRole,
+      loading, 
+      error, 
+      signIn, 
+      signOut, 
+      signUp,
+      getProfileById
+    }}>
       {children}
     </AuthContext.Provider>
   );

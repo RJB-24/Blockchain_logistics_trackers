@@ -7,6 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 
+// Define colors based on your provided color palette
+const colors = {
+  primary: '#f2f4d5',   // Light cream
+  secondary: '#2e2c31', // Dark gray
+  tertiary: '#3b431e',  // Olive green
+  accent: '#6f61ef'     // Purple
+};
+
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,32 +29,30 @@ const Login = () => {
 
     try {
       await signIn(email, password);
-      toast({
-        title: 'Success',
-        description: 'You have successfully logged in',
-        variant: 'default',
-      });
       navigate('/');
     } catch (error) {
       console.error('Login error:', error);
-      toast({
-        title: 'Login failed',
-        description: 'Invalid email or password. Please try again.',
-        variant: 'destructive',
-      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Demo login function
-  const handleDemoLogin = async () => {
+  // Demo login function with various roles
+  const handleDemoLogin = async (role: 'manager' | 'driver' | 'customer') => {
     setIsLoading(true);
     try {
-      await signIn('demo@ecofreight.example.com', 'password');
+      // In a real app, you would create actual demo accounts for each role
+      // For now, we'll use the same demo account and pretend it has different roles
+      const demoEmails = {
+        manager: 'demo.manager@ecofreight.example.com',
+        driver: 'demo.driver@ecofreight.example.com',
+        customer: 'demo.customer@ecofreight.example.com'
+      };
+      
+      await signIn(demoEmails[role], 'password');
       toast({
         title: 'Demo Mode',
-        description: 'You are now logged in as a demo user',
+        description: `You are now logged in as a demo ${role}`,
         variant: 'default',
       });
       navigate('/');
@@ -63,19 +69,19 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-eco-light/50 px-4">
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: colors.primary }}>
       <div className="w-full max-w-md">
-        <div className="eco-card p-8">
+        <div className="p-8 rounded-lg shadow-lg" style={{ backgroundColor: 'white' }}>
           <div className="flex items-center justify-center mb-6">
-            <Leaf className="h-10 w-10 text-eco-purple" />
-            <h1 className="text-2xl font-bold ml-2">EcoFreight</h1>
+            <Leaf className="h-10 w-10" style={{ color: colors.tertiary }} />
+            <h1 className="text-2xl font-bold ml-2" style={{ color: colors.secondary }}>EcoFreight</h1>
           </div>
           
-          <h2 className="text-2xl font-bold text-center mb-6">Sign In</h2>
+          <h2 className="text-2xl font-bold text-center mb-6" style={{ color: colors.secondary }}>Sign In</h2>
           
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium mb-1">
+              <label htmlFor="email" className="block text-sm font-medium mb-1" style={{ color: colors.secondary }}>
                 Email
               </label>
               <Input
@@ -85,16 +91,17 @@ const Login = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="eco-input w-full"
+                className="w-full"
+                style={{ borderColor: colors.secondary }}
               />
             </div>
             
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label htmlFor="password" className="block text-sm font-medium">
+                <label htmlFor="password" className="block text-sm font-medium" style={{ color: colors.secondary }}>
                   Password
                 </label>
-                <Link to="/forgot-password" className="text-sm text-eco-purple hover:underline">
+                <Link to="/forgot-password" className="text-sm hover:underline" style={{ color: colors.accent }}>
                   Forgot password?
                 </Link>
               </div>
@@ -105,14 +112,16 @@ const Login = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="eco-input w-full"
+                className="w-full"
+                style={{ borderColor: colors.secondary }}
               />
             </div>
             
             <Button 
               type="submit" 
-              className="w-full bg-eco-purple hover:bg-eco-purple/90"
+              className="w-full"
               disabled={isLoading}
+              style={{ backgroundColor: colors.accent, color: 'white' }}
             >
               {isLoading ? (
                 <span className="flex items-center">
@@ -147,21 +156,45 @@ const Login = () => {
             </Button>
           </form>
           
-          <div className="mt-4">
-            <Button 
-              variant="outline" 
-              className="w-full"
-              onClick={handleDemoLogin}
-              disabled={isLoading}
-            >
-              Try Demo Account
-            </Button>
+          <div className="mt-6">
+            <p className="text-sm text-center mb-3" style={{ color: colors.secondary }}>Try a demo account:</p>
+            <div className="grid grid-cols-3 gap-2">
+              <Button 
+                variant="outline" 
+                className="text-xs"
+                onClick={() => handleDemoLogin('manager')}
+                disabled={isLoading}
+                style={{ borderColor: colors.tertiary, color: colors.tertiary }}
+              >
+                Manager
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                className="text-xs"
+                onClick={() => handleDemoLogin('driver')}
+                disabled={isLoading}
+                style={{ borderColor: colors.tertiary, color: colors.tertiary }}
+              >
+                Driver
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                className="text-xs"
+                onClick={() => handleDemoLogin('customer')}
+                disabled={isLoading}
+                style={{ borderColor: colors.tertiary, color: colors.tertiary }}
+              >
+                Customer
+              </Button>
+            </div>
           </div>
           
           <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm" style={{ color: colors.secondary }}>
               Don't have an account?{' '}
-              <Link to="/signup" className="text-eco-purple hover:underline">
+              <Link to="/signup" className="hover:underline" style={{ color: colors.accent }}>
                 Sign up
               </Link>
             </p>

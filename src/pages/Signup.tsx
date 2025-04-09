@@ -7,6 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 
+// Define colors based on your provided color palette
+const colors = {
+  primary: '#f2f4d5',   // Light cream
+  secondary: '#2e2c31', // Dark gray
+  tertiary: '#3b431e',  // Olive green
+  accent: '#6f61ef'     // Purple
+};
+
 const Signup = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -41,30 +49,25 @@ const Signup = () => {
       navigate('/');
     } catch (error) {
       console.error('Signup error:', error);
-      toast({
-        title: 'Registration failed',
-        description: 'Could not create your account. Please try again.',
-        variant: 'destructive',
-      });
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-eco-light/50 px-4">
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: colors.primary }}>
       <div className="w-full max-w-md">
-        <div className="eco-card p-8">
+        <div className="p-8 rounded-lg shadow-lg" style={{ backgroundColor: 'white' }}>
           <div className="flex items-center justify-center mb-6">
-            <Leaf className="h-10 w-10 text-eco-purple" />
-            <h1 className="text-2xl font-bold ml-2">EcoFreight</h1>
+            <Leaf className="h-10 w-10" style={{ color: colors.tertiary }} />
+            <h1 className="text-2xl font-bold ml-2" style={{ color: colors.secondary }}>EcoFreight</h1>
           </div>
           
-          <h2 className="text-2xl font-bold text-center mb-6">Create Account</h2>
+          <h2 className="text-2xl font-bold text-center mb-6" style={{ color: colors.secondary }}>Create Account</h2>
           
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium mb-1">
+              <label htmlFor="name" className="block text-sm font-medium mb-1" style={{ color: colors.secondary }}>
                 Full Name
               </label>
               <Input
@@ -74,12 +77,13 @@ const Signup = () => {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="eco-input w-full"
+                className="w-full"
+                style={{ borderColor: colors.secondary }}
               />
             </div>
             
             <div>
-              <label htmlFor="email" className="block text-sm font-medium mb-1">
+              <label htmlFor="email" className="block text-sm font-medium mb-1" style={{ color: colors.secondary }}>
                 Email
               </label>
               <Input
@@ -89,12 +93,13 @@ const Signup = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="eco-input w-full"
+                className="w-full"
+                style={{ borderColor: colors.secondary }}
               />
             </div>
             
             <div>
-              <label htmlFor="password" className="block text-sm font-medium mb-1">
+              <label htmlFor="password" className="block text-sm font-medium mb-1" style={{ color: colors.secondary }}>
                 Password
               </label>
               <Input
@@ -105,12 +110,13 @@ const Signup = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={8}
-                className="eco-input w-full"
+                className="w-full"
+                style={{ borderColor: colors.secondary }}
               />
             </div>
             
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium mb-1">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium mb-1" style={{ color: colors.secondary }}>
                 Confirm Password
               </label>
               <Input
@@ -120,14 +126,16 @@ const Signup = () => {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className="eco-input w-full"
+                className="w-full"
+                style={{ borderColor: colors.secondary }}
               />
             </div>
             
             <Button 
               type="submit" 
-              className="w-full bg-eco-purple hover:bg-eco-purple/90"
+              className="w-full"
               disabled={isLoading}
+              style={{ backgroundColor: colors.accent, color: 'white' }}
             >
               {isLoading ? (
                 <span className="flex items-center">
@@ -163,9 +171,9 @@ const Signup = () => {
           </form>
           
           <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm" style={{ color: colors.secondary }}>
               Already have an account?{' '}
-              <Link to="/login" className="text-eco-purple hover:underline">
+              <Link to="/login" className="hover:underline" style={{ color: colors.accent }}>
                 Sign in
               </Link>
             </p>

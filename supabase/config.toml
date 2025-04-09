@@ -1,1 +1,8 @@
+
 project_id = "vqxotgcgsbvjcrchcwup"
+
+[functions."blockchain-verify"]
+verify_jwt = false
+
+[functions."sustainability-ai"]
+verify_jwt = true
