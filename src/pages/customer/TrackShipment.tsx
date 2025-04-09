@@ -154,7 +154,7 @@ const TrackShipment = () => {
           location: data.location || 'Unknown location',
           notes: data.notes || null,
           battery_level: data.battery_level,
-          shock_detected: data.shock_detected,
+          shock_detected: data.shock_detected || false,
           blockchain_tx_hash: data.blockchain_tx_hash
         }));
         

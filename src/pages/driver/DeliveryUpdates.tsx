@@ -135,7 +135,7 @@ const DeliveryUpdates = () => {
           temperature: item.temperature,
           humidity: item.humidity,
           battery_level: item.battery_level,
-          shock_detected: item.shock_detected,
+          shock_detected: item.shock_detected || false,
           blockchain_tx_hash: item.blockchain_tx_hash
         }));
         

@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { CalendarIcon, Package, AlertTriangle, Truck, Info } from 'lucide-react';
+import { CalendarIcon, Package, AlertTriangle, Truck, Info, Train, Ship } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -77,13 +77,13 @@ const CreateShipment = () => {
     try {
       const { data: customerData, error: customerError } = await supabase
         .from('profiles')
-        .select('id, full_name')
-        .eq('role', 'customer');
+        .select('id, full_name');
       
       if (customerError) throw customerError;
       
       const typedCustomers: User[] = (customerData || []).map(customer => ({
-        ...customer,
+        id: customer.id,
+        full_name: customer.full_name,
         role: 'customer'
       }));
       
@@ -91,13 +91,13 @@ const CreateShipment = () => {
       
       const { data: driverData, error: driverError } = await supabase
         .from('profiles')
-        .select('id, full_name')
-        .eq('role', 'driver');
+        .select('id, full_name');
       
       if (driverError) throw driverError;
       
       const typedDrivers: User[] = (driverData || []).map(driver => ({
-        ...driver,
+        id: driver.id,
+        full_name: driver.full_name,
         role: 'driver'
       }));
       
@@ -324,20 +324,14 @@ const CreateShipment = () => {
                       </SelectItem>
                       <SelectItem value="train">
                         <div className="flex items-center">
-                          <Package className="mr-2 h-4 w-4" />
+                          <Train className="mr-2 h-4 w-4" />
                           <span>Train</span>
                         </div>
                       </SelectItem>
                       <SelectItem value="ship">
                         <div className="flex items-center">
-                          <Package className="mr-2 h-4 w-4" />
+                          <Ship className="mr-2 h-4 w-4" />
                           <span>Ship</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="air">
-                        <div className="flex items-center">
-                          <Package className="mr-2 h-4 w-4" />
-                          <span>Air</span>
                         </div>
                       </SelectItem>
                     </SelectContent>
