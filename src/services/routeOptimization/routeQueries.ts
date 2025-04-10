@@ -13,7 +13,7 @@ export const getAllRoutes = async (): Promise<OptimizedRoute[]> => {
     if (error) throw error;
     
     // If no data, return empty array
-    if (!data || !data.length) {
+    if (!data || !Array.isArray(data)) {
       return [];
     }
     
@@ -50,7 +50,9 @@ export const getRouteById = async (routeId: string): Promise<OptimizedRoute | nu
     
     if (error) throw error;
     
-    if (!data || !data.length) return null;
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return null;
+    }
     
     // Transform database format to our interface format
     const route: OptimizedRoute = {
@@ -93,15 +95,18 @@ export const updateRoute = async (
         p_total_carbon_footprint: routeData.totalCarbonFootprint || 0,
         p_total_fuel_consumption: routeData.totalFuelConsumption || 0,
         p_is_optimized: routeData.isOptimized || false,
-        p_optimized_at: routeData.optimizedAt || null
+        p_optimized_at: routeData.optimizedAt || new Date().toISOString()
       }
     });
     
     if (error) throw error;
     
-    if (!data) return null;
+    if (!data) {
+      throw new Error('No data returned from update operation');
+    }
     
-    return {
+    // Transform response to our interface format
+    const updatedRoute: OptimizedRoute = {
       id: data.id,
       name: data.name,
       points: data.points || [],
@@ -115,37 +120,44 @@ export const updateRoute = async (
       isOptimized: data.is_optimized,
       optimizedAt: data.optimized_at
     };
+    
+    return updatedRoute;
   } catch (error) {
-    console.error('Error updating route:', error);
+    console.error(`Error updating route ${routeId}:`, error);
     toast.error('Failed to update route');
     return null;
   }
 };
 
 // Create a new route
-export const createRoute = async (routeData: Omit<OptimizedRoute, 'id'>): Promise<OptimizedRoute | null> => {
+export const createRoute = async (
+  routeData: Omit<OptimizedRoute, 'id'>
+): Promise<OptimizedRoute | null> => {
   try {
     const { data, error } = await supabase.functions.invoke('database-function', {
       body: { 
         function: 'create_route',
         p_name: routeData.name,
-        p_points: routeData.points,
-        p_segments: routeData.segments,
-        p_total_distance: routeData.totalDistance,
-        p_total_duration: routeData.totalDuration,
-        p_total_carbon_footprint: routeData.totalCarbonFootprint,
-        p_total_fuel_consumption: routeData.totalFuelConsumption,
-        p_transport_types: routeData.transportTypes,
+        p_points: routeData.points || [],
+        p_segments: routeData.segments || [],
+        p_total_distance: routeData.totalDistance || 0,
+        p_total_duration: routeData.totalDuration || 0,
+        p_total_carbon_footprint: routeData.totalCarbonFootprint || 0,
+        p_total_fuel_consumption: routeData.totalFuelConsumption || 0,
+        p_transport_types: routeData.transportTypes || [],
         p_is_optimized: routeData.isOptimized || false,
-        p_optimized_at: routeData.optimizedAt || null
+        p_optimized_at: routeData.optimizedAt || new Date().toISOString()
       }
     });
     
     if (error) throw error;
     
-    if (!data) return null;
+    if (!data) {
+      throw new Error('No data returned from create operation');
+    }
     
-    return {
+    // Transform response to our interface format
+    const newRoute: OptimizedRoute = {
       id: data.id,
       name: data.name,
       points: data.points || [],
@@ -159,6 +171,8 @@ export const createRoute = async (routeData: Omit<OptimizedRoute, 'id'>): Promis
       isOptimized: data.is_optimized,
       optimizedAt: data.optimized_at
     };
+    
+    return newRoute;
   } catch (error) {
     console.error('Error creating route:', error);
     toast.error('Failed to create route');

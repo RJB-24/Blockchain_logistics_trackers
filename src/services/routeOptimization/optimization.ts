@@ -2,7 +2,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { OptimizedRoute, RoutePoint, RouteSustainabilityStats } from './types';
 import { toast } from 'sonner';
-import { getRouteById, updateRoute } from './routeQueries';
+import { getRouteById, updateRoute, createRoute } from './routeQueries';
 
 // Optimize existing route
 export const optimizeRoute = async (routeId: string): Promise<OptimizedRoute | null> => {
