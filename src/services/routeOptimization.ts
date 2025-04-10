@@ -1,7 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Database } from '@/integrations/supabase/types';
 
 // Types for route optimization
 export interface RoutePoint {
@@ -68,9 +67,9 @@ export const routeOptimizationService = {
   // Get all routes from Supabase
   getRoutes: async (): Promise<OptimizedRoute[]> => {
     try {
+      // Use raw query to bypass TypeScript issues with the routes table
       const { data, error } = await supabase
-        .from('routes')
-        .select('*');
+        .rpc('get_all_routes');
       
       if (error) throw error;
       
@@ -80,7 +79,7 @@ export const routeOptimizationService = {
       }
       
       // Transform database format to our interface format
-      const routes: OptimizedRoute[] = data.map(route => ({
+      const routes: OptimizedRoute[] = data.map((route: any) => ({
         id: route.id,
         name: route.name,
         points: route.points as RoutePoint[],
@@ -106,30 +105,28 @@ export const routeOptimizationService = {
   // Get a specific route by ID
   getRouteById: async (routeId: string): Promise<OptimizedRoute | null> => {
     try {
+      // Use raw query to bypass TypeScript issues with the routes table
       const { data, error } = await supabase
-        .from('routes')
-        .select('*')
-        .eq('id', routeId)
-        .maybeSingle();
+        .rpc('get_route_by_id', { route_id: routeId });
       
       if (error) throw error;
       
-      if (!data) return null;
+      if (!data || data.length === 0) return null;
       
       // Transform database format to our interface format
       const route: OptimizedRoute = {
-        id: data.id,
-        name: data.name,
-        points: data.points as RoutePoint[],
-        segments: data.segments as RouteSegment[],
-        totalDistance: data.total_distance,
-        totalDuration: data.total_duration,
-        totalCarbonFootprint: data.total_carbon_footprint,
-        totalFuelConsumption: data.total_fuel_consumption,
-        transportTypes: data.transport_types,
-        shipmentsIncluded: data.shipments_included,
-        isOptimized: data.is_optimized,
-        optimizedAt: data.optimized_at
+        id: data[0].id,
+        name: data[0].name,
+        points: data[0].points as RoutePoint[],
+        segments: data[0].segments as RouteSegment[],
+        totalDistance: data[0].total_distance,
+        totalDuration: data[0].total_duration,
+        totalCarbonFootprint: data[0].total_carbon_footprint,
+        totalFuelConsumption: data[0].total_fuel_consumption,
+        transportTypes: data[0].transport_types,
+        shipmentsIncluded: data[0].shipments_included,
+        isOptimized: data[0].is_optimized,
+        optimizedAt: data[0].optimized_at
       };
       
       return route;
@@ -165,20 +162,19 @@ export const routeOptimizationService = {
         throw new Error('Optimization failed');
       }
       
-      // Store the optimized route
+      // Store the optimized route using raw query
       const { error: updateError } = await supabase
-        .from('routes')
-        .update({ 
-          points: data.optimizedRoute.points,
-          segments: data.optimizedRoute.segments,
-          total_distance: data.optimizedRoute.totalDistance,
-          total_duration: data.optimizedRoute.totalDuration,
-          total_carbon_footprint: data.optimizedRoute.totalCarbonFootprint,
-          total_fuel_consumption: data.optimizedRoute.totalFuelConsumption,
-          is_optimized: true,
-          optimized_at: new Date().toISOString()
-        })
-        .eq('id', routeId);
+        .rpc('update_route', {
+          p_id: routeId,
+          p_points: data.optimizedRoute.points,
+          p_segments: data.optimizedRoute.segments,
+          p_total_distance: data.optimizedRoute.totalDistance,
+          p_total_duration: data.optimizedRoute.totalDuration,
+          p_total_carbon_footprint: data.optimizedRoute.totalCarbonFootprint,
+          p_total_fuel_consumption: data.optimizedRoute.totalFuelConsumption,
+          p_is_optimized: true,
+          p_optimized_at: new Date().toISOString()
+        });
       
       if (updateError) throw updateError;
       
@@ -235,26 +231,20 @@ export const routeOptimizationService = {
         throw new Error('Route generation failed');
       }
       
-      // Prepare route data for insertion
-      const routeData = {
-        name: `${origins[0].name} to ${destinations[0].name}`,
-        points: data.optimizedRoute.points,
-        segments: data.optimizedRoute.segments,
-        total_distance: data.optimizedRoute.totalDistance,
-        total_duration: data.optimizedRoute.totalDuration,
-        total_carbon_footprint: data.optimizedRoute.totalCarbonFootprint,
-        total_fuel_consumption: data.optimizedRoute.totalFuelConsumption,
-        transport_types: preferredModes,
-        is_optimized: true,
-        optimized_at: new Date().toISOString()
-      };
-      
-      // Store the generated route
+      // Prepare route data for insertion using RPC function
       const { data: savedRoute, error: insertError } = await supabase
-        .from('routes')
-        .insert(routeData)
-        .select()
-        .single();
+        .rpc('create_route', {
+          p_name: `${origins[0].name} to ${destinations[0].name}`,
+          p_points: data.optimizedRoute.points,
+          p_segments: data.optimizedRoute.segments,
+          p_total_distance: data.optimizedRoute.totalDistance,
+          p_total_duration: data.optimizedRoute.totalDuration,
+          p_total_carbon_footprint: data.optimizedRoute.totalCarbonFootprint,
+          p_total_fuel_consumption: data.optimizedRoute.totalFuelConsumption,
+          p_transport_types: preferredModes,
+          p_is_optimized: true,
+          p_optimized_at: new Date().toISOString()
+        });
       
       if (insertError) throw insertError;
       
@@ -263,17 +253,17 @@ export const routeOptimizationService = {
       // Return the route in our application format
       const newRoute: OptimizedRoute = {
         id: savedRoute.id,
-        name: savedRoute.name,
-        points: savedRoute.points as RoutePoint[],
-        segments: savedRoute.segments as RouteSegment[],
-        totalDistance: savedRoute.total_distance,
-        totalDuration: savedRoute.total_duration,
-        totalCarbonFootprint: savedRoute.total_carbon_footprint,
-        totalFuelConsumption: savedRoute.total_fuel_consumption,
-        transportTypes: savedRoute.transport_types,
-        shipmentsIncluded: savedRoute.shipments_included,
-        isOptimized: savedRoute.is_optimized,
-        optimizedAt: savedRoute.optimized_at
+        name: `${origins[0].name} to ${destinations[0].name}`,
+        points: data.optimizedRoute.points,
+        segments: data.optimizedRoute.segments,
+        totalDistance: data.optimizedRoute.totalDistance,
+        totalDuration: data.optimizedRoute.totalDuration,
+        totalCarbonFootprint: data.optimizedRoute.totalCarbonFootprint,
+        totalFuelConsumption: data.optimizedRoute.totalFuelConsumption,
+        transportTypes: preferredModes,
+        shipmentsIncluded: [],
+        isOptimized: true,
+        optimizedAt: new Date().toISOString()
       };
       
       return newRoute;

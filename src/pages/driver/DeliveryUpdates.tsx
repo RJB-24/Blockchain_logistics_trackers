@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -314,7 +313,10 @@ const DeliveryUpdates = () => {
             <CardContent>
               <div className="space-y-4">
                 <div>
-                  <Select value={updateStatus} onValueChange={setUpdateStatus}>
+                  <Select 
+                    value={updateStatus} 
+                    onValueChange={(value: 'processing' | 'in-transit' | 'delivered' | 'delayed') => setUpdateStatus(value)}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select new status" />
                     </SelectTrigger>

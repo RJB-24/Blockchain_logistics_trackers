@@ -1,43 +1,67 @@
 
+// Edge function for handling sustainability analysis and route optimization
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.0";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.4.0';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-interface AIRequest {
-  action: 'analyze_shipment' | 'generate_suggestions' | 'optimize_route' | 'predict_maintenance' | 'calculate_carbon_credits';
-  shipmentId?: string;
-  vehicleData?: any;
-  routeParams?: {
-    origin: string;
-    destination: string;
-    transportType: string;
-    currentLocation?: { lat: number; lng: number };
-  };
-}
-
-interface ShipmentData {
+interface RoutePoint {
   id: string;
-  title: string;
-  transport_type: string;
-  origin: string;
-  destination: string;
-  carbon_footprint: number;
-  weight: number;
-  product_type: string;
+  name: string;
+  address: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+  type: 'origin' | 'destination' | 'waypoint';
+  estimatedTime?: string;
+  status?: 'current' | 'upcoming' | 'completed';
 }
 
-interface MultiModalRouteSegment {
-  mode: 'truck' | 'rail' | 'ship' | 'air';
-  distance: number;
-  startLocation: string;
-  endLocation: string;
-  carbonFootprint: number;
-  estimatedTime: number; // in minutes
+interface RouteSegment {
+  origin: {
+    id: string;
+    name: string;
+  };
+  destination: {
+    id: string;
+    name: string;
+  };
+  distance: number; // in km
+  duration: number; // in minutes
+  mode: 'truck' | 'ship' | 'rail' | 'air';
+  carbonFootprint: number; // in kg CO2
+  fuelConsumption: number; // in liters
 }
+
+interface OptimizedRoute {
+  points: RoutePoint[];
+  segments: RouteSegment[];
+  totalDistance: number;
+  totalDuration: number;
+  totalCarbonFootprint: number;
+  totalFuelConsumption: number;
+}
+
+// Sample transport mode emission factors (g CO2 per ton-km)
+const emissionFactors = {
+  truck: 62,
+  ship: 8,
+  rail: 22,
+  air: 602
+};
+
+// Sample fuel consumption rates (L per km)
+const fuelConsumptionRates = {
+  truck: 0.35,
+  ship: 0.01, // Normalized for comparison
+  rail: 0.05,
+  air: 2.8
+};
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -48,147 +72,36 @@ serve(async (req) => {
   }
   
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const { action, routeParams, routeId, shipmentId } = await req.json();
     
-    // Create a Supabase client with the service role key (for admin access)
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // Parse the request body
-    const { action, shipmentId, vehicleData, routeParams } = await req.json() as AIRequest;
+    console.log(`Sustainability AI function called with action: ${action}`);
     
-    if (action === 'analyze_shipment' && shipmentId) {
-      // Get shipment data
-      const { data: shipment, error: shipmentError } = await supabase
-        .from('shipments')
-        .select('*')
-        .eq('id', shipmentId)
-        .single();
-      
-      if (shipmentError) throw shipmentError;
-      
-      // Generate AI analysis (this is a simplified mock example)
-      const analysis = analyzeSustainability(shipment);
-      
-      return new Response(
-        JSON.stringify({
-          success: true,
-          analysis,
-        }),
-        {
-          headers: { 
-            ...corsHeaders, 
-            "Content-Type": "application/json" 
-          },
-        }
-      );
-    } 
+    if (action === 'optimize_route') {
+      // This simulates an AI route optimization algorithm
+      return await optimizeRoute(routeParams, supabase);
+    }
+    else if (action === 'analyze_shipment') {
+      // This simulates an AI sustainability analysis
+      return await analyzeShipment(shipmentId || routeId, supabase);
+    }
     else if (action === 'generate_suggestions') {
-      // Get recent shipments for analysis
-      const { data: shipments, error: shipmentsError } = await supabase
-        .from('shipments')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
-      
-      if (shipmentsError) throw shipmentsError;
-      
-      // Generate AI suggestions based on recent shipments
-      const suggestions = generateSustainabilitySuggestions(shipments);
-      
-      // Save suggestions to the database
-      const { error: insertError } = await supabase
-        .from('ai_suggestions')
-        .insert(suggestions);
-      
-      if (insertError) throw insertError;
-      
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: `Generated ${suggestions.length} sustainability suggestions`,
-        }),
-        {
-          headers: { 
-            ...corsHeaders, 
-            "Content-Type": "application/json" 
-          },
-        }
-      );
-    }
-    else if (action === 'optimize_route' && routeParams) {
-      // Generate optimized route using AI for multi-modal transportation
-      const optimizedRoute = generateOptimizedRoute(routeParams);
-      
-      return new Response(
-        JSON.stringify({
-          success: true,
-          optimizedRoute,
-        }),
-        {
-          headers: { 
-            ...corsHeaders, 
-            "Content-Type": "application/json" 
-          },
-        }
-      );
-    }
-    else if (action === 'predict_maintenance' && vehicleData) {
-      // Use AI to predict maintenance needs based on vehicle data
-      const maintenancePredictions = predictMaintenance(vehicleData);
-      
-      return new Response(
-        JSON.stringify({
-          success: true,
-          predictions: maintenancePredictions,
-        }),
-        {
-          headers: { 
-            ...corsHeaders, 
-            "Content-Type": "application/json" 
-          },
-        }
-      );
-    }
-    else if (action === 'calculate_carbon_credits' && shipmentId) {
-      // Get shipment data
-      const { data: shipment, error: shipmentError } = await supabase
-        .from('shipments')
-        .select('*')
-        .eq('id', shipmentId)
-        .single();
-      
-      if (shipmentError) throw shipmentError;
-      
-      // Calculate carbon credits based on sustainability factors
-      const carbonCredits = calculateCarbonCredits(shipment);
-      
-      return new Response(
-        JSON.stringify({
-          success: true,
-          shipmentId,
-          carbonCredits,
-        }),
-        {
-          headers: { 
-            ...corsHeaders, 
-            "Content-Type": "application/json" 
-          },
-        }
-      );
+      // This simulates AI-generated sustainability suggestions
+      return await generateSuggestions(shipmentId, supabase);
     }
     
     return new Response(
       JSON.stringify({
         success: false,
-        error: "Invalid action or missing parameters",
+        error: "Invalid action specified",
       }),
       {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
-        headers: { 
-          ...corsHeaders, 
-          "Content-Type": "application/json" 
-        },
       }
     );
     
@@ -202,395 +115,444 @@ serve(async (req) => {
       }),
       {
         status: 500,
-        headers: { 
-          ...corsHeaders, 
-          "Content-Type": "application/json" 
-        },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }
 });
 
-// Mock function to analyze shipment sustainability
-function analyzeSustainability(shipment: ShipmentData) {
-  // This is a simplified mock implementation
-  // In a real-world application, this would use an actual AI model
-  
-  const transportEfficiency = {
-    'rail': 0.9,
-    'ship': 0.7,
-    'multi-modal': 0.6,
-    'truck': 0.4,
-    'air': 0.2
-  };
-  
-  const efficiency = transportEfficiency[shipment.transport_type as keyof typeof transportEfficiency] || 0.5;
-  
-  // Calculate sustainability score (0-100)
-  const sustainabilityScore = Math.round(efficiency * 100);
-  
-  // Calculate carbon savings potential
-  const potentialSavings = calculatePotentialSavings(shipment);
-  
-  return {
-    shipmentId: shipment.id,
-    sustainabilityScore,
-    analysis: {
-      carbonFootprint: shipment.carbon_footprint,
-      transportEfficiency: efficiency,
-      potentialSavings,
-      recommendations: [
-        `Consider using ${getMoreSustainableTransport(shipment.transport_type)} for future shipments on similar routes`,
-        `Optimize packaging to reduce weight and volume`,
-        `Batch shipments to the same destination for improved efficiency`
-      ]
-    }
-  };
-}
+async function optimizeRoute(routeParams: any, supabase: any) {
+  console.log("Optimizing route with params:", routeParams);
 
-// Mock function to generate sustainability suggestions
-function generateSustainabilitySuggestions(shipments: ShipmentData[]) {
-  // This is a simplified mock implementation
-  // In a real-world application, this would use an actual AI model
-  
-  if (!shipments || shipments.length === 0) {
-    return [];
-  }
-  
-  const suggestions = [];
-  
-  // Analyze transport types used
-  const transportCounts: Record<string, number> = {};
-  shipments.forEach(s => {
-    transportCounts[s.transport_type] = (transportCounts[s.transport_type] || 0) + 1;
-  });
-  
-  // Find the most used transport type with a more sustainable alternative
-  const mostUsedUnsustainable = Object.entries(transportCounts)
-    .filter(([type]) => type === 'air' || type === 'truck')
-    .sort(([, countA], [, countB]) => countB - countA)[0];
-  
-  if (mostUsedUnsustainable) {
-    const [transportType, count] = mostUsedUnsustainable;
-    const alternative = getMoreSustainableTransport(transportType);
-    
-    // Calculate average carbon and cost savings
-    const relevantShipments = shipments.filter(s => s.transport_type === transportType);
-    const avgCarbonFootprint = relevantShipments.reduce((sum, s) => sum + s.carbon_footprint, 0) / relevantShipments.length;
-    const potentialCarbonSavings = avgCarbonFootprint * 0.4; // Assume 40% savings
-    const potentialCostSavings = relevantShipments.reduce((sum, s) => sum + (s.weight * 2), 0) / relevantShipments.length;
-    
-    suggestions.push({
-      title: `Switch from ${transportType} to ${alternative} transport where possible`,
-      description: `You've used ${transportType} transport for ${count} recent shipments. Switching to ${alternative} could significantly reduce carbon emissions and potentially lower shipping costs, especially for non-urgent deliveries.`,
-      carbon_savings: potentialCarbonSavings,
-      cost_savings: potentialCostSavings,
-      implemented: false
-    });
-  }
-  
-  // Look for common routes to suggest consolidation
-  const routes: Record<string, number> = {};
-  shipments.forEach(s => {
-    const route = `${s.origin} → ${s.destination}`;
-    routes[route] = (routes[route] || 0) + 1;
-  });
-  
-  const commonRoutes = Object.entries(routes)
-    .filter(([, count]) => count > 1)
-    .sort(([, countA], [, countB]) => countB - countA);
-  
-  if (commonRoutes.length > 0) {
-    const [routeName, count] = commonRoutes[0];
-    const [origin, destination] = routeName.split(' → ');
-    
-    const routeShipments = shipments.filter(s => s.origin === origin && s.destination === destination);
-    const totalCarbon = routeShipments.reduce((sum, s) => sum + s.carbon_footprint, 0);
-    const avgWeight = routeShipments.reduce((sum, s) => sum + (s.weight || 0), 0) / routeShipments.length;
-    
-    suggestions.push({
-      title: `Consolidate shipments on the ${routeName} route`,
-      description: `You've made ${count} separate shipments on the ${routeName} route. Consolidating these into fewer, larger shipments could reduce carbon emissions by up to 30% and save on per-shipment handling costs.`,
-      carbon_savings: totalCarbon * 0.3, // Assume 30% savings
-      cost_savings: avgWeight * count * 0.4, // Simplified cost calculation
-      implemented: false
-    });
-  }
-  
-  // Suggest packaging optimization
-  if (shipments.some(s => s.weight > 50)) {
-    suggestions.push({
-      title: "Optimize packaging for heavy shipments",
-      description: "Several of your heavier shipments could benefit from lightweight, eco-friendly packaging alternatives. This can reduce both shipping weight and environmental impact from packaging materials.",
-      carbon_savings: 15.2, // Example value
-      cost_savings: 120.5, // Example value
-      implemented: false
-    });
-  }
-  
-  // Add new AI-powered suggestions for predictive maintenance
-  suggestions.push({
-    title: "Implement predictive maintenance for delivery vehicles",
-    description: "Our AI analysis shows that implementing predictive maintenance for your fleet could reduce fuel consumption by 12% and extend vehicle lifespan. This would result in significant carbon and cost savings.",
-    carbon_savings: 28.5,
-    cost_savings: 350.75,
-    implemented: false
-  });
-  
-  // Add suggestions for carbon credit trading
-  suggestions.push({
-    title: "Participate in blockchain carbon credit marketplace",
-    description: "Based on your sustainability improvements, your company qualifies for carbon credit trading. By tokenizing and trading these credits on our blockchain marketplace, you could offset costs while further incentivizing sustainable practices.",
-    carbon_savings: 45.0,
-    cost_savings: 500.0,
-    implemented: false
-  });
-  
-  return suggestions;
-}
-
-// Generate optimized route with multi-modal transport options
-function generateOptimizedRoute(routeParams: AIRequest['routeParams']) {
-  if (!routeParams) return null;
-  
-  const { origin, destination, transportType } = routeParams;
-  
-  // This is a mock implementation - in a real application this would use
-  // actual route optimization algorithms and real distance/time data
-  const segments: MultiModalRouteSegment[] = [];
-  
-  // Create a mock multi-modal route based on the transport type preference
-  if (transportType === 'multi-modal') {
-    // Simulate a route with truck -> rail -> truck segments
-    segments.push({
-      mode: 'truck',
-      startLocation: origin,
-      endLocation: 'Railway Terminal A',
-      distance: 120,
-      carbonFootprint: 120 * 0.092, // kg CO2
-      estimatedTime: 90 // minutes
-    });
-    
-    segments.push({
-      mode: 'rail',
-      startLocation: 'Railway Terminal A',
-      endLocation: 'Railway Terminal B',
-      distance: 500,
-      carbonFootprint: 500 * 0.022, // kg CO2
-      estimatedTime: 240 // minutes
-    });
-    
-    segments.push({
-      mode: 'truck',
-      startLocation: 'Railway Terminal B',
-      endLocation: destination,
-      distance: 80,
-      carbonFootprint: 80 * 0.092, // kg CO2
-      estimatedTime: 70 // minutes
-    });
-  } else if (transportType === 'ship') {
-    // Simulate a route with truck -> ship -> truck segments
-    segments.push({
-      mode: 'truck',
-      startLocation: origin,
-      endLocation: 'Port A',
-      distance: 50,
-      carbonFootprint: 50 * 0.092, // kg CO2
-      estimatedTime: 40 // minutes
-    });
-    
-    segments.push({
-      mode: 'ship',
-      startLocation: 'Port A',
-      endLocation: 'Port B',
-      distance: 800,
-      carbonFootprint: 800 * 0.015, // kg CO2
-      estimatedTime: 2400 // minutes (40 hours)
-    });
-    
-    segments.push({
-      mode: 'truck',
-      startLocation: 'Port B',
-      endLocation: destination,
-      distance: 70,
-      carbonFootprint: 70 * 0.092, // kg CO2
-      estimatedTime: 60 // minutes
-    });
-  } else {
-    // Single mode transport (truck, air, rail)
-    let distance = 600; // Mock distance
-    let carbonFactor = 0.092; // Default to truck
-    let speed = 7; // km per minute
-    
-    if (transportType === 'air') {
-      carbonFactor = 0.82;
-      speed = 15;
-    } else if (transportType === 'rail') {
-      carbonFactor = 0.022;
-      speed = 2;
+  // If we have an existing route to optimize
+  if (routeParams.routeId) {
+    const { data: routeData } = await supabase
+      .from('routes')
+      .select('*')
+      .eq('id', routeParams.routeId)
+      .single();
+      
+    if (!routeData) {
+      throw new Error('Route not found');
     }
     
+    const points = routeParams.points || routeData.points;
+    const optimized = optimizeRoutePoints(points, routeParams.transportTypes || routeData.transport_types);
+    
+    return new Response(
+      JSON.stringify({
+        success: true,
+        optimizedRoute: optimized
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
+  } 
+  // If creating a new route
+  else if (routeParams.origins && routeParams.destinations) {
+    const pointsToOptimize = [
+      ...routeParams.origins,
+      ...routeParams.destinations
+    ];
+    
+    const optimized = optimizeRoutePoints(
+      pointsToOptimize, 
+      routeParams.preferredModes || ['truck'], 
+      routeParams.optimizationCriteria || 'carbon'
+    );
+    
+    return new Response(
+      JSON.stringify({
+        success: true,
+        optimizedRoute: optimized
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
+  }
+  
+  throw new Error('Invalid route parameters');
+}
+
+function optimizeRoutePoints(
+  points: RoutePoint[], 
+  transportTypes: string[], 
+  optimizationCriteria: 'time' | 'cost' | 'carbon' = 'carbon'
+): OptimizedRoute {
+  if (!points || points.length < 2) {
+    throw new Error('At least two points are required for optimization');
+  }
+  
+  console.log(`Optimizing ${points.length} points with criteria: ${optimizationCriteria}`);
+  
+  // Sort waypoints to minimize distance (simple greedy algorithm)
+  // In a real app, this would use a sophisticated algorithm considering
+  // traffic, time windows, vehicle constraints, etc.
+  
+  const origins = points.filter(p => p.type === 'origin');
+  const destinations = points.filter(p => p.type === 'destination');
+  let waypoints = points.filter(p => p.type === 'waypoint');
+  
+  // For demo, we'll just randomize the order of waypoints to simulate optimization
+  waypoints = waypoints.sort(() => Math.random() - 0.5);
+  
+  // Create the optimized route
+  const optimizedPoints = [...origins, ...waypoints, ...destinations];
+  
+  // Generate route segments
+  const segments: RouteSegment[] = [];
+  let totalDistance = 0;
+  let totalDuration = 0;
+  let totalCarbonFootprint = 0;
+  let totalFuelConsumption = 0;
+  
+  for (let i = 0; i < optimizedPoints.length - 1; i++) {
+    const origin = optimizedPoints[i];
+    const destination = optimizedPoints[i + 1];
+    
+    // In a real app, calculate actual distance between points
+    // Here we use a rough approximation based on coordinates
+    const distance = calculateDistance(
+      origin.coordinates.lat, 
+      origin.coordinates.lng, 
+      destination.coordinates.lat, 
+      destination.coordinates.lng
+    );
+    
+    // Choose transport mode based on preferences and distance
+    const mode = chooseTransportMode(distance, transportTypes);
+    
+    // Calculate duration based on mode and distance
+    const duration = calculateDuration(distance, mode);
+    
+    // Calculate carbon footprint and fuel consumption
+    const carbonFootprint = calculateCarbonFootprint(distance, mode);
+    const fuelConsumption = calculateFuelConsumption(distance, mode);
+    
     segments.push({
-      mode: transportType as any,
-      startLocation: origin,
-      endLocation: destination,
+      origin: { id: origin.id, name: origin.name },
+      destination: { id: destination.id, name: destination.name },
       distance,
-      carbonFootprint: distance * carbonFactor,
-      estimatedTime: distance / speed
+      duration,
+      mode,
+      carbonFootprint,
+      fuelConsumption
     });
+    
+    totalDistance += distance;
+    totalDuration += duration;
+    totalCarbonFootprint += carbonFootprint;
+    totalFuelConsumption += fuelConsumption;
   }
   
-  // Calculate totals
-  const totalDistance = segments.reduce((sum, segment) => sum + segment.distance, 0);
-  const totalCarbonFootprint = segments.reduce((sum, segment) => sum + segment.carbonFootprint, 0);
-  const totalTime = segments.reduce((sum, segment) => sum + segment.estimatedTime, 0);
-  
   return {
-    origin,
-    destination,
+    points: optimizedPoints,
     segments,
-    summary: {
-      totalDistance,
-      totalCarbonFootprint,
-      totalTime,
-      primaryMode: transportType
+    totalDistance,
+    totalDuration,
+    totalCarbonFootprint,
+    totalFuelConsumption
+  };
+}
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  // Simplified distance calculation using Haversine formula
+  const R = 6371; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2); 
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+  const distance = R * c; // Distance in km
+  return Math.round(distance * 10) / 10; // Round to 1 decimal
+}
+
+function deg2rad(deg: number): number {
+  return deg * (Math.PI/180);
+}
+
+function chooseTransportMode(
+  distance: number, 
+  preferences: string[]
+): 'truck' | 'ship' | 'rail' | 'air' {
+  // This is a simplistic model to choose transport mode
+  // In a real app, this would consider many more factors
+  
+  const validPreferences = preferences.filter(p => 
+    ['truck', 'ship', 'rail', 'air'].includes(p)
+  );
+  
+  if (validPreferences.length === 0) {
+    // Default fallback logic based on distance
+    if (distance < 100) return 'truck';
+    if (distance < 500) return 'rail';
+    if (distance < 1000) return 'ship';
+    return 'air';
+  }
+  
+  // Choose from preferred modes based on distance
+  if (distance < 100 && validPreferences.includes('truck')) return 'truck';
+  if (distance < 500 && validPreferences.includes('rail')) return 'rail';
+  if (distance < 1000 && validPreferences.includes('ship')) return 'ship';
+  if (distance >= 1000 && validPreferences.includes('air')) return 'air';
+  
+  // If no preferred mode is suitable, use the first preference
+  return validPreferences[0] as 'truck' | 'ship' | 'rail' | 'air';
+}
+
+function calculateDuration(distance: number, mode: 'truck' | 'ship' | 'rail' | 'air'): number {
+  // Average speeds in km/h
+  const speeds = {
+    truck: 60,
+    rail: 80,
+    ship: 30,
+    air: 800
+  };
+  
+  const speed = speeds[mode];
+  const hours = distance / speed;
+  
+  // Add loading/unloading time based on mode
+  const loadingTime = {
+    truck: 1,
+    rail: 2,
+    ship: 6,
+    air: 3
+  };
+  
+  return Math.round((hours * 60) + loadingTime[mode]);
+}
+
+function calculateCarbonFootprint(distance: number, mode: 'truck' | 'ship' | 'rail' | 'air'): number {
+  const emissionFactor = emissionFactors[mode];
+  // Calculate emissions in kg of CO2 (assume 10 ton cargo for simplicity)
+  return Math.round((distance * emissionFactor * 10) / 1000 * 100) / 100;
+}
+
+function calculateFuelConsumption(distance: number, mode: 'truck' | 'ship' | 'rail' | 'air'): number {
+  const consumptionRate = fuelConsumptionRates[mode];
+  return Math.round(distance * consumptionRate * 100) / 100;
+}
+
+async function analyzeShipment(id: string, supabase: any) {
+  console.log(`Analyzing sustainability for shipment/route ID: ${id}`);
+  
+  try {
+    // Try to find as route first
+    const { data: routeData } = await supabase
+      .from('routes')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+      
+    if (routeData) {
+      // If optimized, compare to pre-optimization metrics
+      if (routeData.is_optimized) {
+        // Simulate pre-optimization values (in reality these would be stored)
+        const originalDistance = routeData.total_distance * 1.2;
+        const originalDuration = routeData.total_duration * 1.15;
+        const originalCarbonFootprint = routeData.total_carbon_footprint * 1.3;
+        const originalFuelConsumption = routeData.total_fuel_consumption * 1.25;
+        
+        return new Response(
+          JSON.stringify({
+            success: true,
+            analysis: {
+              carbonSaved: Math.round((originalCarbonFootprint - routeData.total_carbon_footprint) * 100) / 100,
+              fuelSaved: Math.round((originalFuelConsumption - routeData.total_fuel_consumption) * 100) / 100,
+              timeSaved: Math.round(originalDuration - routeData.total_duration),
+              sustainabilityScore: calculateSustainabilityScore(routeData),
+              recommendations: generateRecommendations(routeData)
+            }
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      } else {
+        // Not optimized yet, provide potential savings
+        return new Response(
+          JSON.stringify({
+            success: true,
+            analysis: {
+              carbonSaved: 0,
+              fuelSaved: 0,
+              timeSaved: 0,
+              sustainabilityScore: calculateSustainabilityScore(routeData),
+              recommendations: [
+                "Optimize this route to reduce carbon emissions and fuel consumption",
+                "Consider using rail or ship transport for longer segments",
+                "Implement load optimization to maximize cargo space usage"
+              ]
+            }
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
     }
-  };
-}
-
-// Predict maintenance needs for vehicles
-function predictMaintenance(vehicleData: any) {
-  // This is a simplified mock implementation
-  if (!vehicleData) return [];
-  
-  const { vehicleId, mileage, engineHours, lastMaintenanceDate, telemetryData } = vehicleData;
-  
-  // In a real implementation, this would use ML models trained on vehicle data
-  const maintenanceItems = [];
-  
-  // Mock logic to simulate AI predictions
-  if (mileage > 5000 && Date.now() - new Date(lastMaintenanceDate).getTime() > 90 * 24 * 60 * 60 * 1000) {
-    maintenanceItems.push({
-      item: "Oil Change",
-      urgency: "High",
-      estimatedCost: 50,
-      fuelSavings: 3, // percentage
-      emissionReduction: 2.5 // percentage
-    });
-  }
-  
-  if (mileage > 20000) {
-    maintenanceItems.push({
-      item: "Transmission Service",
-      urgency: "Medium",
-      estimatedCost: 150,
-      fuelSavings: 2,
-      emissionReduction: 1.8
-    });
-  }
-  
-  if (telemetryData && telemetryData.tirePressure && 
-      telemetryData.tirePressure.some((pressure: number) => pressure < 32)) {
-    maintenanceItems.push({
-      item: "Tire Pressure Adjustment",
-      urgency: "High",
-      estimatedCost: 0,
-      fuelSavings: 4,
-      emissionReduction: 4
-    });
-  }
-  
-  if (telemetryData && telemetryData.batteryHealth && telemetryData.batteryHealth < 70) {
-    maintenanceItems.push({
-      item: "Battery Replacement",
-      urgency: "Medium",
-      estimatedCost: 120,
-      fuelSavings: 1,
-      emissionReduction: 0.5
-    });
-  }
-  
-  return {
-    vehicleId,
-    predictionDate: new Date().toISOString(),
-    maintenanceItems,
-    summary: {
-      totalItems: maintenanceItems.length,
-      criticalItems: maintenanceItems.filter(item => item.urgency === "High").length,
-      potentialFuelSavings: maintenanceItems.reduce((sum, item) => sum + item.fuelSavings, 0),
-      potentialEmissionReduction: maintenanceItems.reduce((sum, item) => sum + item.emissionReduction, 0)
+    
+    // If not found as route, try as shipment
+    const { data: shipmentData } = await supabase
+      .from('shipments')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+      
+    if (shipmentData) {
+      // Generate analysis based on shipment data
+      return new Response(
+        JSON.stringify({
+          success: true,
+          analysis: {
+            carbonSaved: 0, // No comparison available
+            fuelSaved: 0, // No comparison available
+            timeSaved: 0, // No comparison available
+            sustainabilityScore: 65 + Math.floor(Math.random() * 20), // Mock score
+            recommendations: [
+              "Create an optimized route plan for this shipment",
+              "Consider alternative transport modes to reduce emissions",
+              "Combine with other shipments going in the same direction"
+            ]
+          }
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
-  };
-}
-
-// Calculate carbon credits
-function calculateCarbonCredits(shipment: ShipmentData) {
-  // Calculate base score from transport type efficiency
-  const transportEfficiency = {
-    'rail': 0.9,
-    'ship': 0.7,
-    'multi-modal': 0.6,
-    'truck': 0.4,
-    'air': 0.2
-  };
-  
-  const efficiency = transportEfficiency[shipment.transport_type as keyof typeof transportEfficiency] || 0.5;
-  
-  // Calculate carbon savings compared to industry average
-  const industryAverageCO2 = shipment.weight * 0.1; // kg CO2 per kg of freight (mock value)
-  const actualCO2 = shipment.carbon_footprint;
-  const carbonSaved = Math.max(0, industryAverageCO2 - actualCO2);
-  
-  // Calculate credits (1 credit per 10kg CO2 saved)
-  const credits = Math.floor(carbonSaved / 10);
-  
-  // Apply multiplier based on transport efficiency
-  const adjustedCredits = Math.round(credits * (1 + efficiency));
-  
-  return {
-    credits: adjustedCredits,
-    carbonSaved,
-    efficiency,
-    monetaryValue: adjustedCredits * 5, // $5 per credit (mock value)
-    breakdown: {
-      baseCredits: credits,
-      efficiencyBonus: adjustedCredits - credits,
-      totalCredits: adjustedCredits
-    }
-  };
-}
-
-// Helper to calculate potential carbon savings
-function calculatePotentialSavings(shipment: ShipmentData) {
-  // Simplified savings calculation
-  switch (shipment.transport_type) {
-    case 'air':
-      return shipment.carbon_footprint * 0.7; // Can save up to 70% by switching from air
-    case 'truck':
-      return shipment.carbon_footprint * 0.5; // Can save up to 50% by switching from truck
-    case 'multi-modal':
-      return shipment.carbon_footprint * 0.2; // Can save up to 20% by optimizing multi-modal
-    case 'ship':
-      return shipment.carbon_footprint * 0.1; // Can save up to 10% by optimizing ship transport
-    case 'rail':
-      return shipment.carbon_footprint * 0.05; // Can save up to 5% by optimizing rail
-    default:
-      return shipment.carbon_footprint * 0.2;
+    
+    throw new Error('Shipment or route not found');
+    
+  } catch (error) {
+    console.error('Error analyzing shipment:', error);
+    throw error;
   }
 }
 
-// Helper to suggest more sustainable transport options
-function getMoreSustainableTransport(currentType: string): string {
-  switch (currentType) {
-    case 'air':
-      return 'rail or ship';
-    case 'truck':
-      return 'rail';
-    case 'multi-modal':
-      return 'rail-focused multi-modal';
-    case 'ship':
-      return 'rail where applicable';
-    default:
-      return 'rail';
+function calculateSustainabilityScore(routeData: any): number {
+  // This is a simplified sustainability scoring model
+  // In a real app, this would be much more sophisticated
+  
+  let score = 70; // Base score
+  
+  // Add points for using eco-friendly transport modes
+  const transportTypes = routeData.transport_types || [];
+  const ecoFriendlyCount = transportTypes.filter((type: string) => 
+    ['rail', 'ship'].includes(type)
+  ).length;
+  
+  score += ecoFriendlyCount * 5;
+  
+  // Subtract points for high-emission modes
+  const highEmissionCount = transportTypes.filter((type: string) => 
+    type === 'air'
+  ).length;
+  
+  score -= highEmissionCount * 10;
+  
+  // Add points for optimization
+  if (routeData.is_optimized) {
+    score += 10;
+  }
+  
+  // Cap score between 0 and 100
+  return Math.max(0, Math.min(100, score));
+}
+
+function generateRecommendations(routeData: any): string[] {
+  const recommendations: string[] = [];
+  
+  // Check transport modes
+  const transportTypes = routeData.transport_types || [];
+  if (transportTypes.includes('air')) {
+    recommendations.push("Consider replacing air transport with rail or ship to reduce emissions");
+  }
+  
+  if (!transportTypes.includes('rail') && routeData.total_distance > 500) {
+    recommendations.push("Consider using rail transport for longer distances to reduce carbon footprint");
+  }
+  
+  // Add general recommendations
+  recommendations.push("Use vehicles with higher fuel efficiency or alternative fuels");
+  recommendations.push("Implement load optimization to maximize cargo space usage");
+  
+  // Add recommendations based on route characteristics
+  if (routeData.segments && routeData.segments.length > 3) {
+    recommendations.push("Consolidate multiple short segments into fewer longer ones");
+  }
+  
+  return recommendations;
+}
+
+async function generateSuggestions(shipmentId: string, supabase: any) {
+  console.log(`Generating sustainability suggestions for shipment: ${shipmentId}`);
+  
+  try {
+    const { data: shipment } = await supabase
+      .from('shipments')
+      .select('*')
+      .eq('id', shipmentId)
+      .single();
+      
+    if (!shipment) {
+      throw new Error('Shipment not found');
+    }
+    
+    // Generate mock AI suggestions based on shipment data
+    const suggestions = [
+      {
+        title: "Use Rail Transport",
+        description: "Switch from truck to rail transport for the main segment of this shipment to reduce carbon emissions.",
+        carbonSavings: Math.round(shipment.carbon_footprint * 0.4 * 100) / 100,
+        costSavings: Math.round(shipment.carbon_footprint * 0.2 * 100) / 100
+      },
+      {
+        title: "Optimize Loading",
+        description: "Increase vehicle fill rate by combining with other shipments going in the same direction.",
+        carbonSavings: Math.round(shipment.carbon_footprint * 0.15 * 100) / 100,
+        costSavings: Math.round(shipment.carbon_footprint * 0.18 * 100) / 100
+      },
+      {
+        title: "Route Optimization",
+        description: "Optimize the route to reduce total distance traveled and avoid traffic congestion.",
+        carbonSavings: Math.round(shipment.carbon_footprint * 0.1 * 100) / 100,
+        costSavings: Math.round(shipment.carbon_footprint * 0.12 * 100) / 100
+      }
+    ];
+    
+    // Save these suggestions to the database
+    for (const suggestion of suggestions) {
+      await supabase
+        .from('ai_suggestions')
+        .insert({
+          title: suggestion.title,
+          description: suggestion.description,
+          carbon_savings: suggestion.carbonSavings,
+          cost_savings: suggestion.costSavings,
+          shipment_id: shipmentId,
+          user_id: null, // Could be set to the current user if available
+          implemented: false
+        });
+    }
+    
+    return new Response(
+      JSON.stringify({
+        success: true,
+        suggestions
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
+    
+  } catch (error) {
+    console.error('Error generating suggestions:', error);
+    throw error;
   }
 }
