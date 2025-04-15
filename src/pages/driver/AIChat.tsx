@@ -277,7 +277,7 @@ const AIChat = () => {
                   <Leaf className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
                   <div>
                     <p className="font-medium text-sm">Minimize Idle Time</p>
-                    <p className="text-xs text-muted-foreground">Turn off engine during stops > 2 min</p>
+                    <p className="text-xs text-muted-foreground">Turn off engine during stops {'>'}2 min</p>
                   </div>
                 </div>
                 
