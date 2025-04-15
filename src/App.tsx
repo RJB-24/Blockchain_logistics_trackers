@@ -18,7 +18,10 @@ import AISuggestions from "./pages/manager/AISuggestions";
 import WeatherAnalytics from "./pages/manager/WeatherAnalytics";
 import ReviewsManagement from "./pages/manager/ReviewsManagement";
 import CreateShipment from "./pages/manager/CreateShipment";
+import AnalyticsDashboard from "./pages/manager/AnalyticsDashboard";
 import RouteOptimization from "./pages/driver/RouteOptimization";
+import SmartNavigation from "./pages/driver/SmartNavigation";
+import AIChat from "./pages/driver/AIChat";
 import DeliveryUpdates from "./pages/driver/DeliveryUpdates";
 import TrackShipment from "./pages/customer/TrackShipment";
 import CarbonReport from "./pages/customer/CarbonReport";
@@ -143,6 +146,14 @@ const AppRoutes = () => {
           </PrivateRoute>
         } 
       />
+      <Route 
+        path="/manager/analytics" 
+        element={
+          <PrivateRoute allowedRoles={['manager']}>
+            <AnalyticsDashboard />
+          </PrivateRoute>
+        } 
+      />
       
       {/* Driver routes */}
       <Route 
@@ -158,6 +169,22 @@ const AppRoutes = () => {
         element={
           <PrivateRoute allowedRoles={['driver']}>
             <RouteOptimization />
+          </PrivateRoute>
+        } 
+      />
+      <Route 
+        path="/driver/smart-navigation" 
+        element={
+          <PrivateRoute allowedRoles={['driver']}>
+            <SmartNavigation />
+          </PrivateRoute>
+        } 
+      />
+      <Route 
+        path="/driver/ai-chat" 
+        element={
+          <PrivateRoute allowedRoles={['driver']}>
+            <AIChat />
           </PrivateRoute>
         } 
       />

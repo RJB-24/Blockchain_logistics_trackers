@@ -9,6 +9,18 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { UserRole } from '@/contexts/AuthContext';
 import { Loader2, UserPlus, Users } from 'lucide-react';
+import { 
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface User {
   id: string;
@@ -25,6 +37,11 @@ interface User {
 const UserManagement = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserRole>('customer');
+  const [isAddingUser, setIsAddingUser] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -75,12 +92,31 @@ const UserManagement = () => {
 
   const changeUserRole = async (userId: string, newRole: UserRole) => {
     try {
-      const { error } = await supabase
+      // First check if a role record exists for this user
+      const { data: existingRole, error: checkError } = await supabase
         .from('user_roles')
-        .update({ role: newRole })
-        .eq('user_id', userId);
-
-      if (error) throw error;
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+      
+      if (checkError) throw checkError;
+      
+      let result;
+      
+      if (existingRole) {
+        // Update existing role
+        result = await supabase
+          .from('user_roles')
+          .update({ role: newRole })
+          .eq('user_id', userId);
+      } else {
+        // Insert new role record
+        result = await supabase
+          .from('user_roles')
+          .insert({ user_id: userId, role: newRole });
+      }
+      
+      if (result.error) throw result.error;
 
       // Update the local state to reflect the change
       setUsers(users.map(user => 
@@ -91,6 +127,51 @@ const UserManagement = () => {
     } catch (error) {
       console.error('Error updating user role:', error);
       toast.error('Failed to update user role');
+    }
+  };
+
+  const createNewUser = async () => {
+    try {
+      setIsAddingUser(true);
+      
+      // Create user with Supabase auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: newUserEmail,
+        password: 'TemporaryPassword123', // Temporary password - user will need to reset
+        email_confirm: true, // Auto-confirm the email
+        user_metadata: {
+          full_name: newUserName
+        }
+      });
+      
+      if (authError) throw authError;
+      
+      if (!authData.user) {
+        throw new Error('Failed to create user');
+      }
+      
+      // Create or update user role
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .insert({ user_id: authData.user.id, role: newUserRole });
+      
+      if (roleError) throw roleError;
+      
+      toast.success('New user created successfully');
+      setDialogOpen(false);
+      
+      // Reset form
+      setNewUserEmail('');
+      setNewUserName('');
+      setNewUserRole('customer');
+      
+      // Refresh user list
+      fetchUsers();
+    } catch (error) {
+      console.error('Error creating new user:', error);
+      toast.error('Failed to create new user: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsAddingUser(false);
     }
   };
 
@@ -114,10 +195,75 @@ const UserManagement = () => {
             <h1 className="text-2xl font-bold text-eco-dark">User Management</h1>
             <p className="text-muted-foreground">Manage users and their roles</p>
           </div>
-          <Button className="bg-eco-purple hover:bg-eco-purple/90">
-            <UserPlus className="mr-2 h-4 w-4" />
-            Add New User
-          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-eco-purple hover:bg-eco-purple/90">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add New User
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add New User</DialogTitle>
+                <DialogDescription>
+                  Create a new user account and assign permissions.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input 
+                    id="name" 
+                    value={newUserName} 
+                    onChange={(e) => setNewUserName(e.target.value)} 
+                    placeholder="John Doe"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input 
+                    id="email" 
+                    type="email" 
+                    value={newUserEmail} 
+                    onChange={(e) => setNewUserEmail(e.target.value)} 
+                    placeholder="user@example.com"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="role">Role</Label>
+                  <Select 
+                    value={newUserRole} 
+                    onValueChange={(value) => setNewUserRole(value as UserRole)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="driver">Driver</SelectItem>
+                      <SelectItem value="customer">Customer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={createNewUser} 
+                  disabled={isAddingUser || !newUserEmail || !newUserName}
+                  className="bg-eco-purple hover:bg-eco-purple/90"
+                >
+                  {isAddingUser && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Create User
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         <Card>

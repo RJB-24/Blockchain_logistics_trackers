@@ -80,18 +80,10 @@ export const issueCarbonCredits = async (
       throw new Error('Failed to issue carbon credits');
     }
 
-    // Record the credits in the database
-    await supabase.from('shipment_events').insert({
-      shipment_id: shipmentId,
-      event_type: 'carbon_credits_issued',
-      data: {
-        carbonSaved,
-        sustainabilityScore,
-        creditsIssued: data.tokens,
-        transactionHash: data.transactionHash
-      },
+    // Record the credits directly in shipments table as we don't have shipment_events
+    await supabase.from('shipments').update({
       blockchain_tx_hash: data.transactionHash
-    });
+    }).eq('id', shipmentId);
 
     toast.success(`${data.tokens} carbon credits issued for sustainable shipping`);
     return {
@@ -159,19 +151,22 @@ export const getSustainabilityAnalytics = async (
   }
 };
 
+// Type definition to fix the recommendation type issue
+export interface SustainabilityRecommendation {
+  title: string;
+  description: string;
+  impact: string;
+  potentialSavings: {
+    carbon: number;
+    cost: number;
+  };
+}
+
 // Get AI-generated sustainability recommendations
 export const getSustainabilityRecommendations = async (
   shipmentId: string
 ): Promise<{ 
-  recommendations: Array<{
-    title: string;
-    description: string;
-    impact: string;
-    potentialSavings: {
-      carbon: number;
-      cost: number;
-    };
-  }>
+  recommendations: SustainabilityRecommendation[]
 }> => {
   try {
     // Call the sustainability-ai edge function for recommendations

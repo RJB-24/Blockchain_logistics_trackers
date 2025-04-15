@@ -12,12 +12,14 @@ import {
   MessageSquare,
   Package,
   Route,
+  Navigation,
   FileText,
   ClipboardCheck, 
   LogOut,
   Menu,
   X,
-  User
+  User,
+  Settings2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -56,14 +58,17 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       { label: 'Dashboard', icon: <Home size={20} />, href: '/manager' },
       { label: 'User Management', icon: <Users size={20} />, href: '/manager/users' },
       { label: 'Create Shipment', icon: <TruckIcon size={20} />, href: '/manager/create-shipment' },
-      { label: 'AI Suggestions', icon: <BarChart3 size={20} />, href: '/manager/ai-suggestions' },
+      { label: 'Analytics', icon: <BarChart3 size={20} />, href: '/manager/analytics' },
+      { label: 'AI Suggestions', icon: <MessageSquare size={20} />, href: '/manager/ai-suggestions' },
       { label: 'Weather Analytics', icon: <Cloud size={20} />, href: '/manager/weather' },
-      { label: 'Reviews', icon: <MessageSquare size={20} />, href: '/manager/reviews' },
+      { label: 'Reviews', icon: <Star size={20} />, href: '/manager/reviews' },
     ];
   } else if (userRole === 'driver') {
     navItems = [
       { label: 'Dashboard', icon: <Home size={20} />, href: '/driver' },
       { label: 'Route Optimization', icon: <Route size={20} />, href: '/driver/route' },
+      { label: 'Smart Navigation', icon: <Navigation size={20} />, href: '/driver/smart-navigation' },
+      { label: 'AI Assistant', icon: <MessageSquare size={20} />, href: '/driver/ai-chat' },
       { label: 'Delivery Updates', icon: <ClipboardCheck size={20} />, href: '/driver/delivery' },
     ];
   } else if (userRole === 'customer') {
