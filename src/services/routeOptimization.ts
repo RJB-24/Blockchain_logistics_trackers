@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -67,14 +66,15 @@ export const routeOptimizationService = {
   // Get all routes from Supabase
   getRoutes: async (): Promise<OptimizedRoute[]> => {
     try {
-      // Use raw query to bypass TypeScript issues with the routes table
-      const { data, error } = await supabase
-        .rpc('get_all_routes');
+      // Use the database function to get routes
+      const { data, error } = await supabase.functions.invoke('database-function', {
+        body: { function: 'get_all_routes' }
+      });
       
       if (error) throw error;
       
       // If no data, return empty array
-      if (!data || data.length === 0) {
+      if (!data || !Array.isArray(data) || data.length === 0) {
         return [];
       }
       
@@ -105,13 +105,16 @@ export const routeOptimizationService = {
   // Get a specific route by ID
   getRouteById: async (routeId: string): Promise<OptimizedRoute | null> => {
     try {
-      // Use raw query to bypass TypeScript issues with the routes table
-      const { data, error } = await supabase
-        .rpc('get_route_by_id', { route_id: routeId });
+      // Use the database function to get a specific route
+      const { data, error } = await supabase.functions.invoke('database-function', {
+        body: { function: 'get_route_by_id', route_id: routeId }
+      });
       
       if (error) throw error;
       
-      if (!data || data.length === 0) return null;
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        return null;
+      }
       
       // Transform database format to our interface format
       const route: OptimizedRoute = {
@@ -270,6 +273,110 @@ export const routeOptimizationService = {
     } catch (error) {
       console.error('Error generating multi-modal route:', error);
       toast.error('Failed to generate route');
+      return null;
+    }
+  },
+  
+  // Update an existing route
+  updateRoute: async (
+    routeId: string,
+    routeData: Partial<OptimizedRoute>
+  ): Promise<OptimizedRoute | null> => {
+    try {
+      // Use the database function to update the route
+      const { data, error } = await supabase.functions.invoke('database-function', {
+        body: { 
+          function: 'update_route',
+          p_id: routeId,
+          p_points: routeData.points || [],
+          p_segments: routeData.segments || [],
+          p_total_distance: routeData.totalDistance || 0,
+          p_total_duration: routeData.totalDuration || 0,
+          p_total_carbon_footprint: routeData.totalCarbonFootprint || 0,
+          p_total_fuel_consumption: routeData.totalFuelConsumption || 0,
+          p_is_optimized: routeData.isOptimized || false,
+          p_optimized_at: routeData.optimizedAt || new Date().toISOString()
+        }
+      });
+      
+      if (error) throw error;
+      
+      if (!data) {
+        throw new Error('No data returned from update operation');
+      }
+      
+      // Transform response to our interface format
+      const updatedRoute: OptimizedRoute = {
+        id: data.id,
+        name: data.name,
+        points: data.points || [],
+        segments: data.segments || [],
+        totalDistance: data.total_distance,
+        totalDuration: data.total_duration,
+        totalCarbonFootprint: data.total_carbon_footprint,
+        totalFuelConsumption: data.total_fuel_consumption,
+        transportTypes: data.transport_types || [],
+        shipmentsIncluded: data.shipments_included || [],
+        isOptimized: data.is_optimized,
+        optimizedAt: data.optimized_at
+      };
+      
+      return updatedRoute;
+    } catch (error) {
+      console.error(`Error updating route ${routeId}:`, error);
+      toast.error('Failed to update route');
+      return null;
+    }
+  },
+  
+  // Create a new route
+  createRoute: async (
+    routeData: Omit<OptimizedRoute, 'id'>
+  ): Promise<OptimizedRoute | null> => {
+    try {
+      // Use the database function to create a new route
+      const { data, error } = await supabase.functions.invoke('database-function', {
+        body: { 
+          function: 'create_route',
+          p_name: routeData.name,
+          p_points: routeData.points || [],
+          p_segments: routeData.segments || [],
+          p_total_distance: routeData.totalDistance || 0,
+          p_total_duration: routeData.totalDuration || 0,
+          p_total_carbon_footprint: routeData.totalCarbonFootprint || 0,
+          p_total_fuel_consumption: routeData.totalFuelConsumption || 0,
+          p_transport_types: routeData.transportTypes || [],
+          p_is_optimized: routeData.isOptimized || false,
+          p_optimized_at: routeData.optimizedAt || new Date().toISOString()
+        }
+      });
+      
+      if (error) throw error;
+      
+      if (!data) {
+        throw new Error('No data returned from create operation');
+      }
+      
+      // Transform response to our interface format
+      const newRoute: OptimizedRoute = {
+        id: data.id || '', // Ensure we have an ID even if it's empty
+        name: data.name,
+        points: data.points || [],
+        segments: data.segments || [],
+        totalDistance: data.total_distance,
+        totalDuration: data.total_duration,
+        totalCarbonFootprint: data.total_carbon_footprint,
+        totalFuelConsumption: data.total_fuel_consumption,
+        transportTypes: data.transport_types || [],
+        shipmentsIncluded: data.shipments_included || [],
+        isOptimized: data.is_optimized,
+        optimizedAt: data.optimized_at
+      };
+      
+      return newRoute;
+    } catch (error) {
+      console.error('Error creating route:', error);
+      toast.error('Failed to create route');
       return null;
     }
   },

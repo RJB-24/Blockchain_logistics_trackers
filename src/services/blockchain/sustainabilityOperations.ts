@@ -130,12 +130,13 @@ export const getSustainabilityAnalytics = async (
     }
 
     // Calculate overall sustainability score (0-100)
+    const totalFootprint = data.results.totalFootprint || 0;
     const maxFootprint = Object.values(data.results.byTransportType).reduce((sum: number, value: number) => sum + value, 0) * 2;
-    const sustainabilityScore = Math.min(100, Math.round((1 - (data.results.totalFootprint / maxFootprint)) * 100));
+    const sustainabilityScore = Math.min(100, Math.round((1 - (totalFootprint / maxFootprint)) * 100));
 
     return {
-      totalCarbonFootprint: data.results.totalFootprint,
-      totalCarbonSaved: data.results.totalFootprint * 0.3, // Estimated savings compared to industry average
+      totalCarbonFootprint: totalFootprint,
+      totalCarbonSaved: totalFootprint * 0.3, // Estimated savings compared to industry average
       transportModeBreakdown: data.results.byTransportType,
       sustainabilityScore
     };

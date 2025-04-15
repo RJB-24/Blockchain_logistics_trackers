@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -262,6 +261,171 @@ export const executeCarbonCreditsContract = async (
   } catch (error) {
     console.error('Error executing carbon credits contract:', error);
     toast.error('Failed to issue carbon credits on blockchain');
+    
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+};
+
+/**
+ * Execute a smart contract for customs clearance
+ */
+export const executeCustomsClearance = async (
+  shipmentId: string,
+  customsData: {
+    countryCode: string;
+    declarationId: string;
+    clearanceDate: Date;
+  }
+): Promise<SmartContractExecutionResult> => {
+  try {
+    // Call blockchain-verify edge function
+    const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+      body: {
+        operation: 'customs_clearance',
+        customsData: {
+          shipmentId,
+          ...customsData,
+          clearanceDate: customsData.clearanceDate.toISOString(),
+          timestamp: new Date().toISOString()
+        }
+      }
+    });
+
+    if (error) throw error;
+
+    // Record the customs clearance
+    await supabase
+      .from('shipments')
+      .update({ 
+        customs_status: 'cleared',
+        blockchain_tx_hash: data.transactionHash 
+      })
+      .eq('id', shipmentId);
+
+    toast.success('Customs clearance recorded on blockchain');
+    
+    return {
+      success: true,
+      transactionHash: data.transactionHash,
+      data: data.result
+    };
+  } catch (error) {
+    console.error('Error executing customs clearance contract:', error);
+    toast.error('Failed to record customs clearance on blockchain');
+    
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+};
+
+/**
+ * Execute a smart contract for payment release
+ */
+export const executePaymentRelease = async (
+  shipmentId: string,
+  paymentData: {
+    amount: number;
+    currency: string;
+    recipientId: string;
+  }
+): Promise<SmartContractExecutionResult> => {
+  try {
+    // Call blockchain-verify edge function
+    const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+      body: {
+        operation: 'release_payment',
+        paymentData: {
+          shipmentId,
+          ...paymentData,
+          timestamp: new Date().toISOString()
+        }
+      }
+    });
+
+    if (error) throw error;
+
+    // Record the payment release
+    await supabase
+      .from('shipments')
+      .update({ 
+        payment_status: 'paid',
+        blockchain_tx_hash: data.transactionHash 
+      })
+      .eq('id', shipmentId);
+
+    toast.success(`Payment of ${paymentData.amount} ${paymentData.currency} released on blockchain`);
+    
+    return {
+      success: true,
+      transactionHash: data.transactionHash,
+      data: data.result
+    };
+  } catch (error) {
+    console.error('Error executing payment release contract:', error);
+    toast.error('Failed to release payment on blockchain');
+    
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+};
+
+/**
+ * Create a dispute resolution smart contract
+ */
+export const createDisputeResolution = async (
+  shipmentId: string,
+  disputeData: {
+    reason: string;
+    claimantId: string;
+    respondentId: string;
+    evidenceHashes: string[];
+  }
+): Promise<SmartContractExecutionResult> => {
+  try {
+    // Call blockchain-verify edge function
+    const { data, error } = await supabase.functions.invoke('blockchain-verify', {
+      body: {
+        operation: 'create_dispute',
+        disputeData: {
+          shipmentId,
+          ...disputeData,
+          timestamp: new Date().toISOString()
+        }
+      }
+    });
+
+    if (error) throw error;
+
+    // Record the dispute creation
+    await supabase
+      .from('disputes')
+      .insert({
+        shipment_id: shipmentId,
+        reason: disputeData.reason,
+        claimant_id: disputeData.claimantId,
+        respondent_id: disputeData.respondentId,
+        evidence_hashes: disputeData.evidenceHashes,
+        status: 'open',
+        blockchain_tx_hash: data.transactionHash
+      });
+
+    toast.success('Dispute resolution contract created on blockchain');
+    
+    return {
+      success: true,
+      transactionHash: data.transactionHash,
+      data: data.result
+    };
+  } catch (error) {
+    console.error('Error creating dispute resolution contract:', error);
+    toast.error('Failed to create dispute resolution on blockchain');
     
     return {
       success: false,
