@@ -6,14 +6,15 @@ import { toast } from 'sonner';
 // Get all routes from Supabase
 export const getAllRoutes = async (): Promise<OptimizedRoute[]> => {
   try {
-    const { data, error } = await supabase.functions.invoke('database-function', {
-      body: { function: 'get_all_routes' }
-    });
+    // Use direct database query instead of functions.invoke
+    const { data, error } = await supabase
+      .from('routes')
+      .select('*');
     
     if (error) throw error;
     
     // If no data, return empty array
-    if (!data || !Array.isArray(data)) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
       return [];
     }
     
@@ -44,30 +45,33 @@ export const getAllRoutes = async (): Promise<OptimizedRoute[]> => {
 // Get a specific route by ID
 export const getRouteById = async (routeId: string): Promise<OptimizedRoute | null> => {
   try {
-    const { data, error } = await supabase.functions.invoke('database-function', {
-      body: { function: 'get_route_by_id', route_id: routeId }
-    });
+    // Use direct database query instead of functions.invoke
+    const { data, error } = await supabase
+      .from('routes')
+      .select('*')
+      .eq('id', routeId)
+      .single();
     
     if (error) throw error;
     
-    if (!data || !Array.isArray(data) || data.length === 0) {
+    if (!data) {
       return null;
     }
     
     // Transform database format to our interface format
     const route: OptimizedRoute = {
-      id: data[0].id,
-      name: data[0].name,
-      points: data[0].points || [],
-      segments: data[0].segments || [],
-      totalDistance: data[0].total_distance,
-      totalDuration: data[0].total_duration,
-      totalCarbonFootprint: data[0].total_carbon_footprint,
-      totalFuelConsumption: data[0].total_fuel_consumption,
-      transportTypes: data[0].transport_types || [],
-      shipmentsIncluded: data[0].shipments_included || [],
-      isOptimized: data[0].is_optimized,
-      optimizedAt: data[0].optimized_at
+      id: data.id,
+      name: data.name,
+      points: data.points || [],
+      segments: data.segments || [],
+      totalDistance: data.total_distance,
+      totalDuration: data.total_duration,
+      totalCarbonFootprint: data.total_carbon_footprint,
+      totalFuelConsumption: data.total_fuel_consumption,
+      transportTypes: data.transport_types || [],
+      shipmentsIncluded: data.shipments_included || [],
+      isOptimized: data.is_optimized,
+      optimizedAt: data.optimized_at
     };
     
     return route;
@@ -84,20 +88,27 @@ export const updateRoute = async (
   routeData: Partial<OptimizedRoute>
 ): Promise<OptimizedRoute | null> => {
   try {
-    const { data, error } = await supabase.functions.invoke('database-function', {
-      body: { 
-        function: 'update_route',
-        p_id: routeId,
-        p_points: routeData.points || [],
-        p_segments: routeData.segments || [],
-        p_total_distance: routeData.totalDistance || 0,
-        p_total_duration: routeData.totalDuration || 0,
-        p_total_carbon_footprint: routeData.totalCarbonFootprint || 0,
-        p_total_fuel_consumption: routeData.totalFuelConsumption || 0,
-        p_is_optimized: routeData.isOptimized || false,
-        p_optimized_at: routeData.optimizedAt || new Date().toISOString()
-      }
-    });
+    // Convert from camelCase to snake_case for database
+    const dbData = {
+      name: routeData.name,
+      points: routeData.points,
+      segments: routeData.segments,
+      total_distance: routeData.totalDistance,
+      total_duration: routeData.totalDuration,
+      total_carbon_footprint: routeData.totalCarbonFootprint,
+      total_fuel_consumption: routeData.totalFuelConsumption,
+      transport_types: routeData.transportTypes,
+      is_optimized: routeData.isOptimized,
+      optimized_at: routeData.optimizedAt
+    };
+
+    // Use direct database query instead of functions.invoke
+    const { data, error } = await supabase
+      .from('routes')
+      .update(dbData)
+      .eq('id', routeId)
+      .select()
+      .single();
     
     if (error) throw error;
     
@@ -134,21 +145,27 @@ export const createRoute = async (
   routeData: Omit<OptimizedRoute, 'id'>
 ): Promise<OptimizedRoute | null> => {
   try {
-    const { data, error } = await supabase.functions.invoke('database-function', {
-      body: { 
-        function: 'create_route',
-        p_name: routeData.name,
-        p_points: routeData.points || [],
-        p_segments: routeData.segments || [],
-        p_total_distance: routeData.totalDistance || 0,
-        p_total_duration: routeData.totalDuration || 0,
-        p_total_carbon_footprint: routeData.totalCarbonFootprint || 0,
-        p_total_fuel_consumption: routeData.totalFuelConsumption || 0,
-        p_transport_types: routeData.transportTypes || [],
-        p_is_optimized: routeData.isOptimized || false,
-        p_optimized_at: routeData.optimizedAt || new Date().toISOString()
-      }
-    });
+    // Convert from camelCase to snake_case for database
+    const dbData = {
+      name: routeData.name,
+      points: routeData.points,
+      segments: routeData.segments,
+      total_distance: routeData.totalDistance,
+      total_duration: routeData.totalDuration,
+      total_carbon_footprint: routeData.totalCarbonFootprint,
+      total_fuel_consumption: routeData.totalFuelConsumption,
+      transport_types: routeData.transportTypes,
+      shipments_included: routeData.shipmentsIncluded,
+      is_optimized: routeData.isOptimized,
+      optimized_at: routeData.optimizedAt
+    };
+
+    // Use direct database query instead of functions.invoke
+    const { data, error } = await supabase
+      .from('routes')
+      .insert(dbData)
+      .select()
+      .single();
     
     if (error) throw error;
     

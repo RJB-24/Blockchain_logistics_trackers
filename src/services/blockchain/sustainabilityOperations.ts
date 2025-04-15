@@ -132,7 +132,8 @@ export const getSustainabilityAnalytics = async (
     // Calculate overall sustainability score (0-100)
     const totalFootprint = data.results.totalFootprint || 0;
     const maxFootprint = Object.values(data.results.byTransportType).reduce((sum: number, value: number) => sum + value, 0) * 2;
-    const sustainabilityScore = Math.min(100, Math.round((1 - (totalFootprint / maxFootprint)) * 100));
+    // Fix: Ensure the values being divided are numbers
+    const sustainabilityScore = Math.min(100, Math.round((1 - (totalFootprint / (maxFootprint || 1))) * 100));
 
     return {
       totalCarbonFootprint: totalFootprint,

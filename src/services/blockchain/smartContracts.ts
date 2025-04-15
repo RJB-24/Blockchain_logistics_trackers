@@ -403,18 +403,14 @@ export const createDisputeResolution = async (
 
     if (error) throw error;
 
-    // Record the dispute creation
+    // Record the dispute in the shipments table instead of a non-existent disputes table
     await supabase
-      .from('disputes')
-      .insert({
-        shipment_id: shipmentId,
-        reason: disputeData.reason,
-        claimant_id: disputeData.claimantId,
-        respondent_id: disputeData.respondentId,
-        evidence_hashes: disputeData.evidenceHashes,
-        status: 'open',
-        blockchain_tx_hash: data.transactionHash
-      });
+      .from('shipments')
+      .update({ 
+        blockchain_tx_hash: data.transactionHash,
+        status: 'disputed'
+      })
+      .eq('id', shipmentId);
 
     toast.success('Dispute resolution contract created on blockchain');
     
